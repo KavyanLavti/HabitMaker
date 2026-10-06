@@ -1,57 +1,43 @@
-import * as Notifications from 'expo-notifications';
-import { Habit } from '@/store/habitStore';
+import { PermissionsAndroid, Platform } from 'react-native';
+import { SystemGuard, ReminderSpec } from '@/modules/system-guard';
+import { parseHHMM } from '@/lib/dates';
+import type { Habit } from '@/store/habitStore';
+import type { Settings } from '@/store/settingsStore';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
-
-export async function requestPermissions(): Promise<boolean> {
-  const { status } = await Notifications.requestPermissionsAsync();
-  return status === 'granted';
+export async function requestNotificationPermission(): Promise<boolean> {
+  if (Platform.OS !== 'android') return false;
+  if (Platform.Version < 33) return true;
+  const res = await PermissionsAndroid.request('android.permission.POST_NOTIFICATIONS' as any);
+  return res === PermissionsAndroid.RESULTS.GRANTED;
 }
 
-export async function scheduleHabitNotification(
-  habit: Habit,
-  minutesBefore: number
-): Promise<string | null> {
-  if (!habit.scheduledTime) return null;
-
-  const [h, m] = habit.scheduledTime.split(':').map(Number);
-  const triggerMinutes = h * 60 + m - minutesBefore;
-  if (triggerMinutes < 0) return null;
-
-  const triggerHour = Math.floor(triggerMinutes / 60);
-  const triggerMin = triggerMinutes % 60;
-
-  await cancelHabitNotification(habit.id);
-
-  const id = await Notifications.scheduleNotificationAsync({
-    content: {
-      title: 'HabitForge',
-      body: `Time to start: ${habit.name}`,
-      data: { habitId: habit.id },
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DAILY,
-      hour: triggerHour,
-      minute: triggerMin,
-    },
-  });
-
-  return id;
+/** When a habit's daily alert should fire, in minutes after midnight. Any-time habits have none. */
+export function reminderMinutes(habit: Habit, settings: Settings): number | null {
+  const start = parseHHMM(habit.scheduledTime);
+  if (start == null || habit.scheduleType === 'anytime') return null;
+  if (habit.scheduleType === 'window') return start;
+  return Math.max(0, start - settings.notifyMinutesBefore);
 }
 
-export async function cancelHabitNotification(habitId: string): Promise<void> {
-  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-  for (const n of scheduled) {
-    if (n.content.data?.habitId === habitId) {
-      await Notifications.cancelScheduledNotificationAsync(n.identifier);
-    }
-  }
+function body(habit: Habit): string {
+  const when =
+    habit.scheduleType === 'window' && habit.windowEnd
+      ? `Window ${habit.scheduledTime}–${habit.windowEnd}`
+      : `Scheduled ${habit.scheduledTime}`;
+  return `${when} · ${habit.dailyDurationMinutes} min. Start now or snooze — this alert stays until you choose.`;
+}
+
+/**
+ * Hands the full reminder list to the native scheduler. The native side keeps rescheduling daily
+ * (and after reboots) on its own, so this only needs to run when habits or settings change.
+ */
+export function syncReminders(habits: Habit[], settings: Settings, completedTodayIds: string[]) {
+  const specs: ReminderSpec[] = !settings.notificationsEnabled
+    ? []
+    : habits.flatMap((h) => {
+        const minutes = reminderMinutes(h, settings);
+        return minutes == null ? [] : [{ id: h.id, title: h.name, body: body(h), minutes }];
+      });
+  SystemGuard.setReminders(specs);
+  completedTodayIds.forEach((id) => SystemGuard.markHandled(id));
 }

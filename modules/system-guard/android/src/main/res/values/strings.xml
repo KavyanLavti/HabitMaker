@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="system_guard_label">HabitForge Gate</string>
+  <string name="system_guard_description">Tracks how long you spend in the leisure apps you chose in HabitForge, and closes them when your earned screen time runs out. It only reads which app is in front. It does not read screen content, typing or messages.</string>
+</resources>

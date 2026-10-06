@@ -66,11 +66,28 @@ async function initSchema(db: SQLite.SQLiteDatabase) {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    -- Extra leisure-app minutes granted for a given day, bought with points or drawn from the bank
+    CREATE TABLE IF NOT EXISTS screen_time_grants (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      packageName TEXT NOT NULL,
+      minutes INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      createdAt TEXT NOT NULL
+    );
   `);
 
   // Migrate older DBs that may be missing columns
   try { await db.execAsync('ALTER TABLE rewards ADD COLUMN isRegular INTEGER NOT NULL DEFAULT 0'); } catch {}
   try { await db.execAsync('ALTER TABLE rewards ADD COLUMN iconUri TEXT'); } catch {}
+  // v2: schedule types (fixed time / time window / any time) and a trash instead of hard deletes
+  try {
+    await db.execAsync("ALTER TABLE habits ADD COLUMN scheduleType TEXT NOT NULL DEFAULT 'fixed'");
+    await db.execAsync("UPDATE habits SET scheduleType='anytime' WHERE scheduledTime IS NULL");
+  } catch {}
+  try { await db.execAsync('ALTER TABLE habits ADD COLUMN windowEnd TEXT'); } catch {}
+  try { await db.execAsync('ALTER TABLE habits ADD COLUMN deletedAt TEXT'); } catch {}
 
   // Seed default data on first launch
   const seeded = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_meta WHERE key='seeded'");
@@ -80,7 +97,18 @@ async function initSchema(db: SQLite.SQLiteDatabase) {
   }
 }
 
-function newId() {
+export async function getMeta(key: string): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM app_meta WHERE key=?', [key]);
+  return row?.value ?? null;
+}
+
+export async function setMeta(key: string, value: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('INSERT OR REPLACE INTO app_meta (key,value) VALUES (?,?)', [key, value]);
+}
+
+export function newId() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
@@ -98,9 +126,10 @@ async function seedData(db: SQLite.SQLiteDatabase) {
   ];
   for (const h of habits) {
     await db.runAsync(
-      `INSERT OR IGNORE INTO habits (id,name,urgencyLevel,pointsPerCompletion,dailyDurationMinutes,scheduledTime,totalDays,isDaily,createdAt,archivedAt)
-       VALUES (?,?,?,?,?,?,?,?,?,NULL)`,
-      [h.id, h.name, h.urgencyLevel, h.pointsPerCompletion, h.dailyDurationMinutes, h.scheduledTime, h.totalDays, h.isDaily, now]
+      `INSERT OR IGNORE INTO habits (id,name,urgencyLevel,pointsPerCompletion,dailyDurationMinutes,scheduledTime,totalDays,isDaily,createdAt,archivedAt,scheduleType)
+       VALUES (?,?,?,?,?,?,?,?,?,NULL,?)`,
+      [h.id, h.name, h.urgencyLevel, h.pointsPerCompletion, h.dailyDurationMinutes, h.scheduledTime, h.totalDays, h.isDaily, now,
+       h.scheduledTime ? 'fixed' : 'anytime']
     );
   }
 

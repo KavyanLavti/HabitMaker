@@ -2,16 +2,17 @@
   "expo": {
     "name": "HabitForge",
     "slug": "HabitForge",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "habitforge",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#04060C",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0A0A0F"
+      "backgroundColor": "#04060C"
     },
     "ios": {
       "supportsTablet": true
@@ -19,7 +20,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#04060C"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -34,7 +35,14 @@
       "expo-router",
       "expo-sqlite",
       "expo-font",
-      "expo-notifications"
+      "expo-secure-store",
+      "expo-background-task",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "HabitForge uses your photos for reward icons."
+        }
+      ]
     ],
     "updates": {
       "url": "https://u.expo.dev/deda73af-f547-4c7e-85c4-8c505374d462",

@@ -1,10 +1,14 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '@/constants/Colors';
+import { Colors, Fonts } from '@/constants/theme';
 
-function TabIcon({ name, color }: { name: React.ComponentProps<typeof Ionicons>['name']; color: string }) {
-  return <Ionicons name={name} size={22} color={color} />;
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+function icon(name: IconName, active: IconName) {
+  return ({ color, focused }: { color: string; focused: boolean }) => (
+    <Ionicons name={focused ? active : name} size={22} color={color} />
+  );
 }
 
 export default function TabLayout() {
@@ -14,56 +18,23 @@ export default function TabLayout() {
         headerShown: false,
         tabBarStyle: {
           backgroundColor: Colors.surface,
-          borderTopColor: Colors.border,
+          borderTopColor: Colors.systemDim,
           borderTopWidth: 1,
-          height: 60,
-          paddingBottom: 8,
+          height: 64,
+          paddingBottom: 10,
+          paddingTop: 6,
         },
-        tabBarActiveTintColor: Colors.accent,
+        tabBarActiveTintColor: Colors.system,
         tabBarInactiveTintColor: Colors.textMuted,
-        tabBarLabelStyle: {
-          fontFamily: 'DMSans',
-          fontSize: 10,
-        },
+        tabBarLabelStyle: { fontFamily: Fonts.displaySemi, fontSize: 10, letterSpacing: 1.2 },
       }}
     >
-      <Tabs.Screen
-        name="today"
-        options={{
-          title: 'Today',
-          tabBarIcon: ({ color }) => <TabIcon name="today-outline" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="quests"
-        options={{
-          title: 'Quests',
-          tabBarIcon: ({ color }) => <TabIcon name="list-outline" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="rewards"
-        options={{
-          title: 'Rewards',
-          tabBarIcon: ({ color }) => <TabIcon name="trophy-outline" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="analytics"
-        options={{
-          title: 'Analytics',
-          tabBarIcon: ({ color }) => <TabIcon name="bar-chart-outline" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          tabBarIcon: ({ color }) => <TabIcon name="settings-outline" color={color} />,
-        }}
-      />
+      <Tabs.Screen name="today" options={{ title: 'TODAY', tabBarIcon: icon('flash-outline', 'flash') }} />
+      <Tabs.Screen name="quests" options={{ title: 'QUESTS', tabBarIcon: icon('list-outline', 'list') }} />
+      <Tabs.Screen name="gate" options={{ title: 'GATE', tabBarIcon: icon('lock-closed-outline', 'lock-closed') }} />
+      <Tabs.Screen name="rewards" options={{ title: 'SHOP', tabBarIcon: icon('diamond-outline', 'diamond') }} />
+      <Tabs.Screen name="status" options={{ title: 'STATUS', tabBarIcon: icon('person-outline', 'person') }} />
       <Tabs.Screen name="index" options={{ href: null }} />
-      <Tabs.Screen name="two" options={{ href: null }} />
     </Tabs>
   );
 }

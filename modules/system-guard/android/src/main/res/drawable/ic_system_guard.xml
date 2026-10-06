@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="24dp"
+  android:height="24dp"
+  android:viewportWidth="24"
+  android:viewportHeight="24">
+  <!-- Diamond "system" glyph with an inner bolt -->
+  <path
+    android:fillColor="#FFFFFFFF"
+    android:fillType="evenOdd"
+    android:pathData="M12,1L23,12L12,23L1,12Z M12,4.8L4.8,12L12,19.2L19.2,12Z" />
+  <path
+    android:fillColor="#FFFFFFFF"
+    android:pathData="M13,6.5L8.5,13H11.5L10.5,17.5L15.5,10.5H12.5Z" />
+</vector>
