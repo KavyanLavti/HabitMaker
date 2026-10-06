@@ -1,17 +1,48 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Modal, View, Text, StyleSheet, TextInput,
-  TouchableOpacity, ScrollView, Switch, KeyboardAvoidingView, Platform
+  Modal, View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Switch, KeyboardAvoidingView,
 } from 'react-native';
-import { Colors } from '@/constants/Colors';
-import { Habit } from '@/store/habitStore';
-import { ForgeButton } from '@/components/ui/ForgeButton';
+import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import { Colors, Fonts, Space, URGENCY } from '@/constants/theme';
+import { SystemPanel, SystemButton, sharedStyles } from '@/components/ui/System';
+import { Habit, HabitInput, ScheduleType } from '@/store/habitStore';
+import { formatHHMM, parseHHMM } from '@/lib/dates';
 
 interface Props {
   visible: boolean;
-  initial?: Partial<Habit>;
-  onSave: (data: Omit<Habit, 'id' | 'createdAt' | 'archivedAt'>) => void;
+  initial?: Habit;
+  onSave: (data: HabitInput) => void;
   onClose: () => void;
+}
+
+const TYPES: { key: ScheduleType; label: string; hint: string }[] = [
+  { key: 'fixed', label: 'FIXED TIME', hint: 'Alert at an exact time every day.' },
+  { key: 'window', label: 'TIME WINDOW', hint: 'Alert when the window opens. Do it any time before it closes.' },
+  { key: 'anytime', label: 'ANY TIME', hint: 'No alert. Just needs to be done today.' },
+];
+
+function TimeField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const open = () => {
+    const mins = parseHHMM(value) ?? 7 * 60;
+    const d = new Date();
+    d.setHours(Math.floor(mins / 60), mins % 60, 0, 0);
+    DateTimePickerAndroid.open({
+      value: d,
+      mode: 'time',
+      is24Hour: true,
+      onChange: (e, date) => {
+        if (e.type === 'set' && date) onChange(formatHHMM(date.getHours() * 60 + date.getMinutes()));
+      },
+    });
+  };
+  return (
+    <View style={{ flex: 1 }}>
+      <Text style={sharedStyles.inputLabel}>{label}</Text>
+      <TouchableOpacity onPress={open} style={[sharedStyles.input, styles.timeBtn]}>
+        <Text style={[styles.timeText, !value && { color: Colors.textMuted }]}>{value || '--:--'}</Text>
+      </TouchableOpacity>
+    </View>
+  );
 }
 
 export function AddHabitModal({ visible, initial, onSave, onClose }: Props) {
@@ -19,227 +50,155 @@ export function AddHabitModal({ visible, initial, onSave, onClose }: Props) {
   const [urgency, setUrgency] = useState<1 | 2 | 3 | 4>(2);
   const [points, setPoints] = useState('');
   const [duration, setDuration] = useState('');
+  const [type, setType] = useState<ScheduleType>('fixed');
+  const [time, setTime] = useState('');
+  const [windowEnd, setWindowEnd] = useState('');
+  const [hasGoal, setHasGoal] = useState(false);
   const [totalDays, setTotalDays] = useState('');
-  const [isDaily, setIsDaily] = useState(true);
-  const [scheduledTime, setScheduledTime] = useState('');
-  const [nameError, setNameError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Reset all fields every time the modal opens, pulling fresh values from `initial`
   useEffect(() => {
     if (!visible) return;
     setName(initial?.name ?? '');
-    setUrgency((initial?.urgencyLevel ?? 2) as 1 | 2 | 3 | 4);
-    setPoints(initial?.pointsPerCompletion != null ? String(initial.pointsPerCompletion) : '');
-    setDuration(initial?.dailyDurationMinutes != null ? String(initial.dailyDurationMinutes) : '');
-    setTotalDays(initial?.totalDays != null ? String(initial.totalDays) : '');
-    setIsDaily(initial?.isDaily ?? true);
-    setScheduledTime(initial?.scheduledTime ?? '');
-    setNameError(false);
+    setUrgency(initial?.urgencyLevel ?? 2);
+    setPoints(initial ? String(initial.pointsPerCompletion) : '');
+    setDuration(initial ? String(initial.dailyDurationMinutes) : '');
+    setType(initial?.scheduleType ?? 'fixed');
+    setTime(initial?.scheduledTime ?? '');
+    setWindowEnd(initial?.windowEnd ?? '');
+    setHasGoal(!!initial?.totalDays);
+    setTotalDays(initial?.totalDays ? String(initial.totalDays) : '');
+    setError(null);
   }, [visible]);
 
-  const handleSave = () => {
-    if (!name.trim()) {
-      setNameError(true);
-      return;
+  const save = () => {
+    if (!name.trim()) return setError('Give the quest a name.');
+    if (type !== 'anytime' && !time) return setError(type === 'window' ? 'Set when the window opens.' : 'Set a time.');
+    if (type === 'window') {
+      if (!windowEnd) return setError('Set when the window closes.');
+      if ((parseHHMM(windowEnd) ?? 0) <= (parseHHMM(time) ?? 0)) return setError('The window must close after it opens.');
     }
     onSave({
       name: name.trim(),
       urgencyLevel: urgency,
       pointsPerCompletion: Number(points) || 10,
       dailyDurationMinutes: Number(duration) || 30,
-      totalDays: isDaily ? null : Number(totalDays) || null,
-      isDaily,
-      scheduledTime: scheduledTime || null,
+      scheduleType: type,
+      scheduledTime: type === 'anytime' ? null : time,
+      windowEnd: type === 'window' ? windowEnd : null,
+      totalDays: hasGoal ? Number(totalDays) || null : null,
+      isDaily: !hasGoal,
     });
     onClose();
   };
 
-  const isEditing = !!initial?.name;
-
   return (
-    <Modal visible={visible} transparent animationType="slide">
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
-      >
-        <View style={styles.sheet}>
-          <Text style={styles.title}>{isEditing ? 'EDIT HABIT' : 'NEW HABIT'}</Text>
-
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: 20 }}
-          >
-            <Text style={styles.label}>Name *</Text>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.overlay} behavior="height">
+        <SystemPanel title={initial ? 'EDIT QUEST' : 'NEW QUEST'} glowing style={styles.sheet}>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <Text style={sharedStyles.inputLabel}>NAME</Text>
             <TextInput
-              style={[styles.input, nameError && styles.inputError]}
+              style={[sharedStyles.input, error?.includes('name') && { borderColor: Colors.danger }]}
               value={name}
-              onChangeText={(t) => { setName(t); if (t.trim()) setNameError(false); }}
+              onChangeText={(t) => { setName(t); setError(null); }}
               placeholder="e.g. Morning run"
               placeholderTextColor={Colors.textMuted}
-              autoFocus={!isEditing}
+              autoFocus={!initial}
             />
-            {nameError && <Text style={styles.errorText}>Name is required</Text>}
 
-            <Text style={styles.label}>Urgency Level</Text>
-            <View style={styles.urgencyRow}>
+            <Text style={sharedStyles.inputLabel}>SCHEDULE</Text>
+            <View style={styles.segment}>
+              {TYPES.map((t) => (
+                <TouchableOpacity
+                  key={t.key}
+                  onPress={() => { setType(t.key); setError(null); }}
+                  style={[styles.segBtn, type === t.key && styles.segBtnOn]}
+                >
+                  <Text style={[styles.segText, type === t.key && { color: Colors.background }]}>{t.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.hint}>{TYPES.find((t) => t.key === type)!.hint}</Text>
+
+            {type !== 'anytime' && (
+              <View style={styles.row}>
+                <TimeField label={type === 'window' ? 'OPENS' : 'TIME'} value={time} onChange={(v) => { setTime(v); setError(null); }} />
+                {type === 'window' && (
+                  <TimeField label="CLOSES" value={windowEnd} onChange={(v) => { setWindowEnd(v); setError(null); }} />
+                )}
+              </View>
+            )}
+
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={sharedStyles.inputLabel}>DURATION (MIN)</Text>
+                <TextInput style={sharedStyles.input} value={duration} onChangeText={setDuration}
+                  keyboardType="numeric" placeholder="30" placeholderTextColor={Colors.textMuted} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={sharedStyles.inputLabel}>POINTS</Text>
+                <TextInput style={sharedStyles.input} value={points} onChangeText={setPoints}
+                  keyboardType="numeric" placeholder="10" placeholderTextColor={Colors.textMuted} />
+              </View>
+            </View>
+
+            <Text style={sharedStyles.inputLabel}>URGENCY</Text>
+            <View style={styles.segment}>
               {([1, 2, 3, 4] as const).map((u) => (
                 <TouchableOpacity
                   key={u}
                   onPress={() => setUrgency(u)}
-                  style={[
-                    styles.urgencyBtn,
-                    urgency === u && { backgroundColor: Colors.accent, borderColor: Colors.accent }
-                  ]}
+                  style={[styles.segBtn, urgency === u && { backgroundColor: URGENCY[u].color, borderColor: URGENCY[u].color }]}
                 >
-                  <Text style={[styles.urgencyBtnText, urgency === u && { color: Colors.background }]}>
-                    {u}
+                  <Text style={[styles.segText, { color: urgency === u ? Colors.background : URGENCY[u].color }]}>
+                    {URGENCY[u].label}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Points / completion</Text>
-                <TextInput
-                  style={styles.input}
-                  value={points}
-                  onChangeText={setPoints}
-                  keyboardType="numeric"
-                  placeholder="10"
-                  placeholderTextColor={Colors.textMuted}
-                />
-              </View>
-              <View style={{ flex: 1, marginLeft: 8 }}>
-                <Text style={styles.label}>Duration (min)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={duration}
-                  onChangeText={setDuration}
-                  keyboardType="numeric"
-                  placeholder="30"
-                  placeholderTextColor={Colors.textMuted}
-                />
-              </View>
+            <View style={[styles.row, { alignItems: 'center', marginTop: Space.md }]}>
+              <Text style={[sharedStyles.inputLabel, { flex: 1, marginTop: 0 }]}>FIXED-LENGTH QUEST (DAYS GOAL)</Text>
+              <Switch value={hasGoal} onValueChange={setHasGoal}
+                trackColor={{ true: Colors.system, false: Colors.border }} thumbColor={Colors.textPrimary} />
             </View>
-
-            <Text style={styles.label}>Scheduled Time (HH:MM, optional)</Text>
-            <TextInput
-              style={styles.input}
-              value={scheduledTime}
-              onChangeText={setScheduledTime}
-              placeholder="07:00"
-              placeholderTextColor={Colors.textMuted}
-              keyboardType="numbers-and-punctuation"
-            />
-
-            <View style={styles.switchRow}>
-              <Text style={styles.label}>Daily / Ongoing</Text>
-              <Switch
-                value={isDaily}
-                onValueChange={setIsDaily}
-                trackColor={{ true: Colors.accent, false: Colors.border }}
-                thumbColor={Colors.textPrimary}
-              />
-            </View>
-
-            {!isDaily && (
-              <>
-                <Text style={styles.label}>Total Days Goal</Text>
-                <TextInput
-                  style={styles.input}
-                  value={totalDays}
-                  onChangeText={setTotalDays}
-                  keyboardType="numeric"
-                  placeholder="30"
-                  placeholderTextColor={Colors.textMuted}
-                />
-              </>
+            {hasGoal && (
+              <TextInput style={sharedStyles.input} value={totalDays} onChangeText={setTotalDays}
+                keyboardType="numeric" placeholder="30" placeholderTextColor={Colors.textMuted} />
             )}
 
-            <View style={styles.btnRow}>
-              <ForgeButton label="SAVE" onPress={handleSave} style={{ flex: 1 }} />
-              <ForgeButton label="CANCEL" onPress={onClose} variant="ghost" style={{ flex: 1 }} />
+            {error && <Text style={styles.error}>{error}</Text>}
+
+            <View style={[styles.row, { marginTop: Space.xl }]}>
+              <SystemButton label="CANCEL" onPress={onClose} variant="ghost" style={{ flex: 1 }} />
+              <SystemButton label="SAVE" onPress={save} style={{ flex: 1 }} />
             </View>
           </ScrollView>
-        </View>
+        </SystemPanel>
       </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
+  overlay: { flex: 1, backgroundColor: 'rgba(2,4,10,0.88)', justifyContent: 'flex-end', padding: Space.sm },
+  sheet: { maxHeight: '94%', marginBottom: Space.sm },
+  row: { flexDirection: 'row', gap: Space.sm },
+  segment: { flexDirection: 'row', gap: 6 },
+  segBtn: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '92%',
-  },
-  title: {
-    fontFamily: 'BebasNeue',
-    fontSize: 24,
-    color: Colors.textPrimary,
-    marginBottom: 16,
-    letterSpacing: 1,
-  },
-  label: {
-    fontFamily: 'DMSansMedium',
-    fontSize: 12,
-    color: Colors.textMuted,
-    marginBottom: 4,
-    marginTop: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  input: {
-    backgroundColor: Colors.surfaceHigh,
-    borderRadius: 8,
-    padding: 10,
-    color: Colors.textPrimary,
-    fontFamily: 'DMSans',
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  inputError: {
-    borderColor: Colors.accentRed,
-    shadowColor: Colors.accentRed,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.7,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  errorText: {
-    fontFamily: 'DMSans',
-    fontSize: 11,
-    color: Colors.accentRed,
-    marginTop: 3,
-  },
-  row: { flexDirection: 'row', gap: 0 },
-  urgencyRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
-  urgencyBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.surfaceHigh,
     borderWidth: 1,
     borderColor: Colors.border,
+    backgroundColor: Colors.surfaceHigh,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 3,
   },
-  urgencyBtnText: {
-    fontFamily: 'DMSansBold',
-    fontSize: 16,
-    color: Colors.textPrimary,
-  },
-  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  btnRow: { flexDirection: 'row', gap: 8, marginTop: 20, marginBottom: 8 },
+  segBtnOn: { backgroundColor: Colors.system, borderColor: Colors.system },
+  segText: { fontFamily: Fonts.displaySemi, fontSize: 10, letterSpacing: 1, color: Colors.textSecondary },
+  hint: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted, marginTop: 6 },
+  timeBtn: { justifyContent: 'center' },
+  timeText: { fontFamily: Fonts.display, fontSize: 18, color: Colors.system, letterSpacing: 2 },
+  error: { fontFamily: Fonts.bodyMedium, fontSize: 13, color: Colors.danger, marginTop: Space.md },
 });

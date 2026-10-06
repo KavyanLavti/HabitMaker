@@ -1,10 +1,10 @@
 import { create } from 'zustand';
-import { runQuery, runMutation } from '@/lib/db';
+import { runQuery, runMutation, newId as uuid } from '@/lib/db';
 
 export interface LedgerEntry {
   id: string;
   habitId: string | null;
-  type: 'earn' | 'bonus' | 'penalty' | 'reward_claim' | 'combo';
+  type: 'earn' | 'bonus' | 'penalty' | 'reward_claim' | 'combo' | 'screen_time';
   amount: number;
   reason: string;
   createdAt: string;
@@ -19,13 +19,6 @@ interface PointStore {
   addEntry: (entry: Omit<LedgerEntry, 'id' | 'createdAt'>) => Promise<void>;
   getLevel: (pointsPerLevel: number) => number;
   getLevelProgress: (pointsPerLevel: number) => number;
-}
-
-function uuid() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-  });
 }
 
 export const usePointStore = create<PointStore>((set, get) => ({

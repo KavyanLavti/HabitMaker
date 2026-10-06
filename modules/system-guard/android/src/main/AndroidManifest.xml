@@ -1,0 +1,52 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+  <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+  <uses-permission android:name="android.permission.VIBRATE" />
+
+  <!-- Lets the Gate tab list installed apps so you can mark which ones are leisure apps -->
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+  </queries>
+
+  <application>
+    <receiver
+      android:name="expo.modules.systemguard.ReminderReceiver"
+      android:exported="false" />
+
+    <receiver
+      android:name="expo.modules.systemguard.BootReceiver"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+
+    <service
+      android:name="expo.modules.systemguard.GuardService"
+      android:exported="true"
+      android:label="@string/system_guard_label"
+      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+      <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+      </intent-filter>
+      <meta-data
+        android:name="android.accessibilityservice"
+        android:resource="@xml/system_guard_accessibility" />
+    </service>
+
+    <activity
+      android:name="expo.modules.systemguard.BlockActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:launchMode="singleTask"
+      android:taskAffinity="expo.modules.systemguard.block"
+      android:theme="@android:style/Theme.Material.NoActionBar" />
+  </application>
+</manifest>

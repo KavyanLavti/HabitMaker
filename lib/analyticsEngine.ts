@@ -1,120 +1,66 @@
 import { HabitCompletion } from '@/store/habitStore';
 import { LedgerEntry } from '@/store/pointStore';
+import { addDaysKey, dateKeyOf, daysBetweenKeys, todayKey } from '@/lib/dates';
 
-export function getConsistencyScore(
-  habitId: string,
-  completions: HabitCompletion[],
-  daysSinceCreation: number
-): number {
-  if (!daysSinceCreation) return 0;
-  const unique = new Set(
-    completions
-      .filter((c) => c.habitId === habitId)
-      .map((c) => c.completedAt.slice(0, 10))
-  ).size;
-  return Math.min(100, Math.round((unique / daysSinceCreation) * 100));
+/** % of days since creation on which the habit was done. */
+export function getConsistencyScore(completions: HabitCompletion[], createdAt: string): number {
+  const days = Math.max(1, daysBetweenKeys(dateKeyOf(createdAt), todayKey()) + 1);
+  const unique = new Set(completions.map((c) => dateKeyOf(c.completedAt))).size;
+  return Math.min(100, Math.round((unique / days) * 100));
 }
 
-export function getWeeklyPointTotals(
-  ledger: LedgerEntry[],
-  weeks = 8
-): { week: string; points: number }[] {
-  const result: { week: string; points: number }[] = [];
-  const now = new Date();
-
-  for (let i = weeks - 1; i >= 0; i--) {
-    const end = new Date(now);
-    end.setDate(now.getDate() - i * 7);
-    const start = new Date(end);
-    start.setDate(end.getDate() - 6);
-    const startStr = start.toISOString().slice(0, 10);
-    const endStr = end.toISOString().slice(0, 10);
-
-    const points = ledger
-      .filter((e) => {
-        const d = e.createdAt.slice(0, 10);
-        return e.amount > 0 && d >= startStr && d <= endStr;
-      })
-      .reduce((sum, e) => sum + e.amount, 0);
-
-    result.push({ week: startStr, points: Math.round(points) });
+/** Points earned per day (positive entries only), oldest first. */
+export function getDailyPointTotals(ledger: LedgerEntry[], days = 14): { date: string; points: number }[] {
+  const today = todayKey();
+  const totals: Record<string, number> = {};
+  for (const e of ledger) {
+    if (e.amount <= 0) continue;
+    const k = dateKeyOf(e.createdAt);
+    totals[k] = (totals[k] ?? 0) + e.amount;
   }
-  return result;
+  return Array.from({ length: days }, (_, i) => {
+    const date = addDaysKey(today, i - days + 1);
+    return { date, points: Math.round(totals[date] ?? 0) };
+  });
 }
 
-export function getDailyPointTotals(
-  ledger: LedgerEntry[],
-  days = 30
-): { date: string; points: number }[] {
-  const result: { date: string; points: number }[] = [];
-  const now = new Date();
-
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(now.getDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
-    const points = ledger
-      .filter((e) => e.amount > 0 && e.createdAt.slice(0, 10) === dateStr)
-      .reduce((sum, e) => sum + e.amount, 0);
-    result.push({ date: dateStr, points: Math.round(points) });
-  }
-  return result;
-}
-
-export function getHeatmapData(
-  completions: HabitCompletion[],
-  days = 90
-): Record<string, number> {
-  const map: Record<string, number> = {};
-  const now = new Date();
-
-  for (let i = 0; i < days; i++) {
-    const d = new Date(now);
-    d.setDate(now.getDate() - i);
-    map[d.toISOString().slice(0, 10)] = 0;
-  }
-
+/** Completions per day for the last `days` days, oldest first. */
+export function getHeatmap(completions: HabitCompletion[], days = 84): { date: string; count: number }[] {
+  const today = todayKey();
+  const counts: Record<string, number> = {};
   for (const c of completions) {
-    const d = c.completedAt.slice(0, 10);
-    if (d in map) map[d]++;
+    const k = dateKeyOf(c.completedAt);
+    counts[k] = (counts[k] ?? 0) + 1;
   }
-  return map;
+  return Array.from({ length: days }, (_, i) => {
+    const date = addDaysKey(today, i - days + 1);
+    return { date, count: counts[date] ?? 0 };
+  });
 }
 
-export function getMissPatternInsights(
-  habitId: string,
-  habitName: string,
-  completions: HabitCompletion[],
-  days = 60
-): string | null {
-  const dayCounts: number[] = Array(7).fill(0);
-  const dayMisses: number[] = Array(7).fill(0);
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const now = new Date();
-
-  for (let i = 0; i < days; i++) {
-    const d = new Date(now);
-    d.setDate(now.getDate() - i);
-    const dow = d.getDay();
-    dayCounts[dow]++;
-    const ds = d.toISOString().slice(0, 10);
-    const done = completions.some(
-      (c) => c.habitId === habitId && c.completedAt.slice(0, 10) === ds
-    );
-    if (!done) dayMisses[dow]++;
+/** "You tend to miss X on Mondays" when one weekday is missed 40%+ of the time over the last 60 days. */
+export function getMissPatternInsight(habitName: string, completions: HabitCompletion[], createdAt: string, days = 60): string | null {
+  const done = new Set(completions.map((c) => dateKeyOf(c.completedAt)));
+  const start = dateKeyOf(createdAt);
+  const today = todayKey();
+  const seen = Array(7).fill(0);
+  const missed = Array(7).fill(0);
+  for (let i = 1; i <= days; i++) {
+    const k = addDaysKey(today, -i);
+    if (k < start) break;
+    const [y, m, d] = k.split('-').map(Number);
+    const dow = new Date(y, m - 1, d).getDay();
+    seen[dow]++;
+    if (!done.has(k)) missed[dow]++;
   }
-
-  let worstDay = -1;
-  let worstRate = 0;
+  let worst = -1;
+  let rate = 0;
   for (let i = 0; i < 7; i++) {
-    if (!dayCounts[i]) continue;
-    const rate = dayMisses[i] / dayCounts[i];
-    if (rate > worstRate) {
-      worstRate = rate;
-      worstDay = i;
-    }
+    if (seen[i] < 3) continue;
+    const r = missed[i] / seen[i];
+    if (r > rate) { rate = r; worst = i; }
   }
-
-  if (worstDay === -1 || worstRate < 0.4) return null;
-  return `You tend to miss "${habitName}" on ${dayNames[worstDay]}s`;
+  if (worst === -1 || rate < 0.4) return null;
+  const names = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+  return `You tend to miss "${habitName}" on ${names[worst]}.`;
 }

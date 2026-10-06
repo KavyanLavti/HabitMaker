@@ -1,392 +1,212 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  Modal, View, Text, StyleSheet, TouchableOpacity,
-  Vibration, Alert, AppState, AppStateStatus,
-} from 'react-native';
-import Animated, {
-  useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming
-} from 'react-native-reanimated';
+import { Modal, View, Text, StyleSheet, Alert, Vibration, TouchableOpacity } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Notifications from 'expo-notifications';
-import { Colors } from '@/constants/Colors';
+import * as Haptics from 'expo-haptics';
+import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
+import { Colors, Fonts, Space, glow } from '@/constants/theme';
+import { SystemPanel, SystemButton, Bar } from '@/components/ui/System';
 import { Habit } from '@/store/habitStore';
+import { todayKey } from '@/lib/dates';
+import { SystemGuard } from '@/modules/system-guard';
 
-export const PAUSED_TIMER_KEY = 'hf_paused_timer';
+export const TIMER_KEY = 'hf_timer_session_v2';
 
-export interface PausedTimerSession {
+/** Timestamp-based so it stays correct while the app is backgrounded or killed. */
+export interface TimerSession {
   habitId: string;
-  remainingSeconds: number;
-  savedAt: string; // ISO string
+  date: string;
+  totalSec: number;
+  elapsedSec: number; // banked before the current run
+  runningSince: number | null; // epoch ms
+}
+
+export function remainingSec(s: TimerSession, now = Date.now()): number {
+  const running = s.runningSince ? (now - s.runningSince) / 1000 : 0;
+  return Math.max(0, s.totalSec - s.elapsedSec - running);
+}
+
+export async function loadTimerSession(): Promise<TimerSession | null> {
+  try {
+    const raw = await AsyncStorage.getItem(TIMER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearTimerSession() {
+  await AsyncStorage.removeItem(TIMER_KEY);
+  SystemGuard.cancelTimer();
 }
 
 interface Props {
   habit: Habit;
   visible: boolean;
+  autoStart?: boolean;
   onComplete: (durationMinutes: number) => void;
-  onDismiss: () => void;
+  onClose: () => void;
 }
 
-export function HabitTimer({ habit, visible, onComplete, onDismiss }: Props) {
-  const totalSeconds = habit.dailyDurationMinutes * 60;
-  const [remaining, setRemaining] = useState(totalSeconds);
-  const [running, setRunning] = useState(false);
-
-  // Refs so AppState handler always sees fresh values
-  const remainingRef = useRef(totalSeconds);
-  const runningRef = useRef(false);
-  // Epoch (ms) when the current run period started, and remaining at that moment
-  const runEpochRef = useRef<number | null>(null);
-  const runStartRemainingRef = useRef<number>(totalSeconds);
-
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const notifIdRef = useRef<string | null>(null);
+export function HabitTimer({ habit, visible, autoStart, onComplete, onClose }: Props) {
+  const [session, setSession] = useState<TimerSession | null>(null);
+  const [, setTick] = useState(0);
+  const finishedRef = useRef(false);
   const pulse = useSharedValue(1);
 
-  // Keep refs in sync with state
-  useEffect(() => { remainingRef.current = remaining; }, [remaining]);
-  useEffect(() => { runningRef.current = running; }, [running]);
+  const persist = (s: TimerSession) => {
+    setSession(s);
+    AsyncStorage.setItem(TIMER_KEY, JSON.stringify(s));
+  };
 
-  // On open: restore same-day paused session, or reset to full
+  // Restore today's session for this habit, or start fresh
   useEffect(() => {
     if (!visible) return;
-    AsyncStorage.getItem(PAUSED_TIMER_KEY).then((raw) => {
-      const today = new Date().toISOString().slice(0, 10);
-      if (raw) {
-        const s: PausedTimerSession = JSON.parse(raw);
-        if (s.habitId === habit.id && s.savedAt.slice(0, 10) === today) {
-          setRemaining(s.remainingSeconds);
-          remainingRef.current = s.remainingSeconds;
-          return;
-        }
+    finishedRef.current = false;
+    loadTimerSession().then((saved) => {
+      let s: TimerSession =
+        saved && saved.habitId === habit.id && saved.date === todayKey()
+          ? saved
+          : { habitId: habit.id, date: todayKey(), totalSec: habit.dailyDurationMinutes * 60, elapsedSec: 0, runningSince: null };
+      if (autoStart && !s.runningSince && remainingSec(s) > 0) {
+        s = { ...s, runningSince: Date.now() };
+        SystemGuard.showTimer(habit.id, habit.name, Date.now() + remainingSec(s) * 1000);
       }
-      setRemaining(totalSeconds);
-      remainingRef.current = totalSeconds;
-      setRunning(false);
-      runningRef.current = false;
+      persist(s);
     });
-  }, [visible, habit.id, totalSeconds]);
+  }, [visible, habit.id]);
 
-  // AppState: when returning to foreground, recalibrate elapsed time
+  const running = !!session?.runningSince;
+  const remaining = session ? remainingSec(session) : habit.dailyDurationMinutes * 60;
+  const total = session?.totalSec ?? habit.dailyDurationMinutes * 60;
+  const elapsed = total - remaining;
+
   useEffect(() => {
-    let bgAt: number | null = null;
-
-    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'background' || state === 'inactive') {
-        bgAt = Date.now();
-      } else if (state === 'active' && bgAt !== null) {
-        if (runningRef.current && runEpochRef.current !== null) {
-          const bgElapsed = Math.floor((Date.now() - bgAt) / 1000);
-          const newRemaining = Math.max(0, remainingRef.current - bgElapsed);
-          setRemaining(newRemaining);
-          remainingRef.current = newRemaining;
-
-          if (newRemaining <= 0) {
-            setRunning(false);
-            runningRef.current = false;
-            clearInterval(intervalRef.current!);
-            cancelScheduledNotif();
-            Vibration.vibrate([0, 400, 200, 400]);
-          } else {
-            // Restart epoch so future background trips are accurate
-            runEpochRef.current = Date.now();
-            runStartRemainingRef.current = newRemaining;
-          }
-        }
-        bgAt = null;
-      }
-    });
-
-    return () => sub.remove();
-  }, []);
-
-  // Start/stop the interval and schedule/cancel a completion notification
-  useEffect(() => {
-    if (running) {
-      runEpochRef.current = Date.now();
-      runStartRemainingRef.current = remaining;
-
-      intervalRef.current = setInterval(() => {
-        setRemaining((r) => {
-          const next = r - 1;
-          remainingRef.current = next;
-          if (next <= 0) {
-            clearInterval(intervalRef.current!);
-            setRunning(false);
-            runningRef.current = false;
-            runEpochRef.current = null;
-            cancelScheduledNotif();
-            Vibration.vibrate([0, 400, 200, 400]);
-            return 0;
-          }
-          return next;
-        });
-      }, 1000);
-
-      // Schedule a notification so the user is alerted even if backgrounded
-      Notifications.scheduleNotificationAsync({
-        content: {
-          title: `${habit.name} — Done! 🎯`,
-          body: 'Timer finished. Open app to save your progress.',
-          sound: true,
-          data: { habitId: habit.id },
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-          seconds: remaining,
-          repeats: false,
-        },
-      }).then((id) => { notifIdRef.current = id; }).catch(() => {});
-
-      pulse.value = withRepeat(
-        withSequence(withTiming(1.08, { duration: 800 }), withTiming(1, { duration: 800 })),
-        -1
-      );
-    } else {
-      clearInterval(intervalRef.current!);
-      cancelScheduledNotif();
-      runEpochRef.current = null;
+    if (!running) {
       pulse.value = withTiming(1);
+      return;
     }
-
-    return () => clearInterval(intervalRef.current!);
+    pulse.value = withRepeat(withSequence(withTiming(1.04, { duration: 900 }), withTiming(1, { duration: 900 })), -1);
+    const id = setInterval(() => setTick((t) => t + 1), 500);
+    return () => clearInterval(id);
   }, [running]);
 
-  function cancelScheduledNotif() {
-    if (notifIdRef.current) {
-      Notifications.cancelScheduledNotificationAsync(notifIdRef.current).catch(() => {});
-      notifIdRef.current = null;
+  // Hit zero: bank the full time and stop
+  useEffect(() => {
+    if (session && running && remaining <= 0 && !finishedRef.current) {
+      finishedRef.current = true;
+      persist({ ...session, elapsedSec: session.totalSec, runningSince: null });
+      Vibration.vibrate([0, 400, 200, 400]);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-  }
-
-  const elapsed = totalSeconds - remaining;
-  const displayMins = Math.floor(remaining / 60);
-  const displaySecs = remaining % 60;
-  const progress = totalSeconds > 0 ? 1 - remaining / totalSeconds : 1;
-  const fraction = totalSeconds > 0 ? Math.min(elapsed / totalSeconds, 1) : 1;
-  const partialPct = Math.round(fraction * 100);
+  });
 
   const pulseStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
 
-  const handleFinish = () => {
-    const elapsedMins = Math.max(1, Math.round(elapsed / 60));
-    const isComplete = remaining === 0;
-    const msg = isComplete
-      ? 'Timer complete! Save your progress?'
-      : `You've done ${partialPct}% (${elapsedMins} min). How would you like to finish?`;
+  if (!session) return null;
 
-    Alert.alert('Finish session?', msg, [
+  const toggle = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (running) {
+      persist({ ...session, elapsedSec: total - remaining, runningSince: null });
+      SystemGuard.cancelTimer();
+    } else {
+      persist({ ...session, runningSince: Date.now() });
+      SystemGuard.showTimer(habit.id, habit.name, Date.now() + remaining * 1000);
+    }
+  };
+
+  const finish = (minutes: number) => {
+    clearTimerSession();
+    onComplete(minutes);
+  };
+
+  const handleFinish = () => {
+    const mins = Math.max(1, Math.round(elapsed / 60));
+    const pct = Math.round((elapsed / total) * 100);
+    if (remaining <= 0) return finish(habit.dailyDurationMinutes);
+    Alert.alert('Finish quest?', `${pct}% done (${mins} min).`, [
       { text: 'Keep going', style: 'cancel' },
-      {
-        text: isComplete ? 'Save Progress' : `Partial (${partialPct}%)`,
-        onPress: () => {
-          AsyncStorage.removeItem(PAUSED_TIMER_KEY);
-          onComplete(elapsedMins);
-        },
-      },
-      {
-        // Award full points — for when the user did the activity but forgot to start the timer
-        text: 'Full Points (Did it!)',
-        onPress: () => {
-          AsyncStorage.removeItem(PAUSED_TIMER_KEY);
-          onComplete(habit.dailyDurationMinutes);
-        },
-      },
+      { text: `Partial (${pct}%)`, onPress: () => finish(mins) },
+      // For when the work was done without the timer running
+      { text: 'Full (I did it all)', onPress: () => finish(habit.dailyDurationMinutes) },
+    ]);
+  };
+
+  const handleAbandon = () => {
+    Alert.alert('Abandon session?', 'The timer and its progress will be discarded.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Abandon', style: 'destructive', onPress: () => { clearTimerSession(); onClose(); } },
     ]);
   };
 
   const handleClose = () => {
-    // If paused mid-session, offer to save progress for same-day resumption
-    if (!running && elapsed > 0 && remaining > 0) {
-      Alert.alert(
-        'Save & Close?',
-        `You've done ${partialPct}% (${Math.round(elapsed / 60)} min). ` +
-        'Save and close to resume later today? Progress auto-awards tonight.',
-        [
-          {
-            text: 'Discard & Close',
-            style: 'destructive',
-            onPress: () => {
-              AsyncStorage.removeItem(PAUSED_TIMER_KEY);
-              onDismiss();
-            },
-          },
-          {
-            text: 'Save & Close',
-            onPress: async () => {
-              await AsyncStorage.setItem(PAUSED_TIMER_KEY, JSON.stringify({
-                habitId: habit.id,
-                remainingSeconds: remaining,
-                savedAt: new Date().toISOString(),
-              } satisfies PausedTimerSession));
-              onDismiss();
-            },
-          },
-        ]
-      );
-    } else {
-      AsyncStorage.removeItem(PAUSED_TIMER_KEY);
-      onDismiss();
-    }
+    if (elapsed <= 0 && !running) clearTimerSession();
+    onClose(); // a running or paused session stays saved and resumes from the notification or the card
   };
 
-  const isPaused = !running && elapsed > 0 && remaining > 0;
+  const mm = String(Math.floor(remaining / 60)).padStart(2, '0');
+  const ss = String(Math.floor(remaining % 60)).padStart(2, '0');
+  const state = remaining <= 0 ? 'CLEARED' : running ? 'IN PROGRESS' : elapsed > 0 ? 'PAUSED' : 'READY';
+  const tone = remaining <= 0 ? Colors.success : running ? Colors.system : Colors.textSecondary;
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.overlay}>
-        <View style={styles.container}>
-          <Text style={styles.habitName}>{habit.name}</Text>
+        <SystemPanel title="QUEST IN PROGRESS" glowing style={styles.panel}>
+          <Text style={styles.name}>{habit.name}</Text>
 
-          <Animated.View style={[styles.timerRing, pulseStyle,
-            running && styles.timerRingActive,
-            remaining === 0 && styles.timerRingDone,
-          ]}>
-            <Text style={styles.timerText}>
-              {String(displayMins).padStart(2, '0')}:{String(displaySecs).padStart(2, '0')}
-            </Text>
-            <Text style={styles.timerSub}>
-              {remaining === 0 ? 'DONE!' : running ? 'IN PROGRESS' : elapsed > 0 ? 'PAUSED' : 'READY'}
-            </Text>
-            {elapsed > 0 && remaining > 0 && (
-              <Text style={styles.timerFraction}>{partialPct}% · partial pts</Text>
-            )}
+          <Animated.View style={[styles.clock, { borderColor: tone }, running && glow(tone, 'strong'), pulseStyle]}>
+            <Text style={[styles.time, { color: tone }]}>{mm}:{ss}</Text>
+            <Text style={styles.state}>{state}</Text>
           </Animated.View>
 
-          <View style={styles.progressBarBg}>
-            <View style={[styles.progressBarFill, { width: `${progress * 100}%` as any }]} />
-          </View>
+          <Bar progress={elapsed / total} color={tone} height={4} />
+          <Text style={styles.hint}>
+            {running ? 'Leave the app if you like — the countdown stays in your notifications.' : ' '}
+          </Text>
 
-          <View style={styles.btnRow}>
+          <View style={styles.buttons}>
             {remaining > 0 && (
-              <TouchableOpacity
-                style={[styles.btn, { backgroundColor: running ? Colors.surfaceHigh : Colors.accent }]}
-                onPress={() => setRunning((r) => !r)}
-              >
-                <Text style={styles.btnText}>{running ? 'PAUSE' : elapsed > 0 ? 'RESUME' : 'START'}</Text>
-              </TouchableOpacity>
+              <SystemButton
+                label={running ? 'PAUSE' : elapsed > 0 ? 'RESUME' : 'START'}
+                onPress={toggle}
+                variant={running ? 'outline' : 'solid'}
+                style={{ flex: 1 }}
+              />
             )}
-            <TouchableOpacity
-              style={[styles.btn, { backgroundColor: Colors.accentBlue }]}
-              onPress={handleFinish}
-            >
-              <Text style={styles.btnText}>FINISH</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.btn, { backgroundColor: Colors.surfaceHigh }]}
-              onPress={handleClose}
-            >
-              <Text style={[styles.btnText, { color: isPaused ? Colors.textPrimary : Colors.textMuted }]}>
-                {isPaused ? 'CLOSE' : 'CANCEL'}
-              </Text>
-            </TouchableOpacity>
+            <SystemButton label="FINISH" onPress={handleFinish} tone="success" variant={remaining <= 0 ? 'solid' : 'outline'} style={{ flex: 1 }} />
           </View>
-
-          {isPaused && (
-            <Text style={styles.pausedHint}>Tap CLOSE to save progress and resume later today</Text>
-          )}
-        </View>
+          <View style={styles.links}>
+            <TouchableOpacity onPress={handleClose}><Text style={styles.link}>HIDE</Text></TouchableOpacity>
+            {elapsed > 0 && (
+              <TouchableOpacity onPress={handleAbandon}><Text style={[styles.link, { color: Colors.danger }]}>ABANDON</Text></TouchableOpacity>
+            )}
+          </View>
+        </SystemPanel>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.9)',
+  overlay: { flex: 1, backgroundColor: 'rgba(2,4,10,0.94)', justifyContent: 'center', padding: Space.xl },
+  panel: { padding: Space.xl },
+  name: { fontFamily: Fonts.display, fontSize: 22, letterSpacing: 1.5, color: Colors.textPrimary, textAlign: 'center' },
+  clock: {
+    alignSelf: 'center',
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  container: {
-    width: '85%',
+    marginVertical: Space.xl,
     backgroundColor: Colors.surface,
-    borderRadius: 20,
-    padding: 28,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
   },
-  habitName: {
-    fontFamily: 'BebasNeue',
-    fontSize: 28,
-    color: Colors.textPrimary,
-    marginBottom: 24,
-    letterSpacing: 1,
-    textAlign: 'center',
-  },
-  timerRing: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    borderWidth: 4,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  timerRingActive: {
-    borderColor: Colors.accent,
-    shadowColor: Colors.accent,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  timerRingDone: {
-    borderColor: Colors.success,
-    shadowColor: Colors.success,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 14,
-    elevation: 8,
-  },
-  timerText: {
-    fontFamily: 'BebasNeue',
-    fontSize: 48,
-    color: Colors.textPrimary,
-  },
-  timerSub: {
-    fontFamily: 'DMSans',
-    fontSize: 10,
-    color: Colors.textMuted,
-    letterSpacing: 2,
-  },
-  timerFraction: {
-    fontFamily: 'DMSans',
-    fontSize: 10,
-    color: Colors.accentBlue,
-    marginTop: 4,
-  },
-  progressBarBg: {
-    width: '100%',
-    height: 6,
-    backgroundColor: Colors.surfaceHigh,
-    borderRadius: 3,
-    marginBottom: 24,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: 6,
-    backgroundColor: Colors.accent,
-    borderRadius: 3,
-  },
-  btnRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' },
-  btn: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  btnText: {
-    fontFamily: 'DMSansBold',
-    fontSize: 12,
-    color: Colors.textPrimary,
-    letterSpacing: 1,
-  },
-  pausedHint: {
-    marginTop: 14,
-    fontFamily: 'DMSans',
-    fontSize: 11,
-    color: Colors.textMuted,
-    textAlign: 'center',
-  },
+  time: { fontFamily: Fonts.display, fontSize: 52, letterSpacing: 2 },
+  state: { fontFamily: Fonts.displaySemi, fontSize: 11, letterSpacing: 3, color: Colors.textMuted },
+  hint: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted, textAlign: 'center', marginTop: Space.sm, minHeight: 18 },
+  buttons: { flexDirection: 'row', gap: Space.sm, marginTop: Space.lg },
+  links: { flexDirection: 'row', justifyContent: 'center', gap: Space.xl, marginTop: Space.lg },
+  link: { fontFamily: Fonts.displaySemi, fontSize: 12, letterSpacing: 2, color: Colors.textSecondary },
 });
