@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // Run: npx tsx lib/__tests__/gate.test.ts
 import assert from 'node:assert/strict';
 import { unusedEarnedMinutes, rollBank, splitRulesChange, defaultGateRules } from '../gate';

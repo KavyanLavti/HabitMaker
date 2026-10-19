@@ -1,7 +1,7 @@
 import '@/lib/backgroundTasks';
 import React, { useEffect } from 'react';
 import { AppState } from 'react-native';
-import { DarkTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';

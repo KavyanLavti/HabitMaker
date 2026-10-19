@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // Run: npx tsx lib/__tests__/streaks.test.ts
 import assert from 'node:assert/strict';
 import { computeStreak } from '../streaks';
