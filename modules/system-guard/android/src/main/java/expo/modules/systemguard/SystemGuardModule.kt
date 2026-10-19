@@ -8,6 +8,8 @@ import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import org.json.JSONArray
+import org.json.JSONObject
 
 class SystemGuardModule : Module() {
   private val ctx: Context
@@ -35,7 +37,28 @@ class SystemGuardModule : Module() {
 
     // ── Leisure-app gate ──
     Function("setGateConfig") { json: String -> GateConfig.save(ctx, json) }
-    Function("getUsage") { date: String -> Usage.read(ctx, date).toString() }
+    Function("getUsage") { date: String -> Usage.forDate(ctx, date).toString() }
+    Function("hasUsageAccess") { Usage.hasUsageAccess(ctx) }
+    Function("openUsageAccessSettings") {
+      // Some phones support jumping straight to this app's entry; fall back to the list
+      try {
+        startSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:${ctx.packageName}")))
+      } catch (e: Exception) {
+        startSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+      }
+    }
+    Function("getGateDebug") {
+      val p = Prefs.get(ctx)
+      val cfg = GateConfig.load(ctx)
+      JSONObject().apply {
+        put("connectedAt", p.getLong(GuardService.DEBUG_CONNECTED_AT, 0L))
+        put("lastPkg", p.getString(GuardService.DEBUG_LAST_PKG, "") ?: "")
+        put("lastAt", p.getLong(GuardService.DEBUG_LAST_AT, 0L))
+        put("configDate", cfg.date)
+        put("configEnabled", cfg.enabled)
+        put("configApps", JSONArray(cfg.packages().toList()))
+      }.toString()
+    }
     Function("isGateServiceEnabled") { GuardService.isEnabled(ctx) }
     Function("openAccessibilitySettings") { startSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
     Function("openAppDetails") {

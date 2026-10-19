@@ -59,6 +59,7 @@ class GuardService : AccessibilityService() {
       addAction(Intent.ACTION_USER_PRESENT)
     }
     ContextCompat.registerReceiver(this, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+    Prefs.get(this).edit().putLong(DEBUG_CONNECTED_AT, System.currentTimeMillis()).apply()
   }
 
   override fun onDestroy() {
@@ -73,6 +74,8 @@ class GuardService : AccessibilityService() {
   override fun onAccessibilityEvent(event: AccessibilityEvent?) {
     if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
     val pkg = event.packageName?.toString() ?: return
+    // Diagnostics for the Gate tab: proves the service is alive and seeing app switches
+    Prefs.get(this).edit().putString(DEBUG_LAST_PKG, pkg).putLong(DEBUG_LAST_AT, System.currentTimeMillis()).apply()
     // The notification shade and keyboards pop over the current app without leaving it
     if (pkg == "com.android.systemui" || pkg in imePackages) return
     if (pkg == current) return
@@ -142,6 +145,9 @@ class GuardService : AccessibilityService() {
 
   companion object {
     private const val TICK_MS = 5_000L
+    const val DEBUG_CONNECTED_AT = "debug_connected_at"
+    const val DEBUG_LAST_PKG = "debug_last_pkg"
+    const val DEBUG_LAST_AT = "debug_last_at"
 
     fun isEnabled(ctx: Context): Boolean {
       val enabled = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)

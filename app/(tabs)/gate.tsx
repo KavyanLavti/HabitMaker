@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Colors, Fonts, Space } from '@/constants/theme';
@@ -8,7 +8,39 @@ import { RulesModal } from '@/components/gate/RulesModal';
 import { useGateStore } from '@/store/gateStore';
 import { usePointStore } from '@/store/pointStore';
 import { BANK_CAP_MINUTES, PACK_MINUTES, GateRules } from '@/lib/gate';
-import { SystemGuard, isSystemGuardAvailable } from '@/modules/system-guard';
+import { SystemGuard, isSystemGuardAvailable, GateDebug } from '@/modules/system-guard';
+import { useTestMode } from '@/lib/testMode';
+
+function ago(ts: number) {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return `${s}S AGO`;
+  if (s < 3600) return `${Math.round(s / 60)}M AGO`;
+  return `${Math.round(s / 3600)}H AGO`;
+}
+
+function SetupStep({ done, title, hint, action, onPress, secondary }: {
+  done: boolean; title: string; hint: string; action: string; onPress: () => void;
+  secondary?: { label: string; onPress: () => void };
+}) {
+  return (
+    <View style={styles.step}>
+      <Text style={[styles.stepTitle, { color: done ? Colors.success : Colors.textPrimary }]}>
+        {done ? '✓ ' : '✗ '}{title}
+      </Text>
+      {!done && (
+        <>
+          <Body muted style={{ fontSize: 12, marginTop: 2 }}>{hint}</Body>
+          <View style={styles.row}>
+            {secondary && (
+              <SystemButton label={secondary.label} small variant="outline" tone="danger" onPress={secondary.onPress} style={{ flex: 1 }} />
+            )}
+            <SystemButton label={action} small tone="danger" onPress={onPress} style={{ flex: 1 }} />
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
 
 function fmt(ms: number) {
   const m = Math.floor(ms / 60000);
@@ -20,13 +52,22 @@ export default function GateTab() {
   const { rules, pending, pendingFrom, bank, todayGrants, usage, refreshUsage, saveRules, buyPack } = useGateStore();
   const points = usePointStore((s) => s.spendablePoints);
   const [serviceOn, setServiceOn] = useState(SystemGuard.isGateServiceEnabled());
+  const [usageOn, setUsageOn] = useState(SystemGuard.hasUsageAccess());
+  const [diag, setDiag] = useState<GateDebug | null>(SystemGuard.getGateDebug());
+  const [showDiag, setShowDiag] = useState(false);
+  const testMode = useTestMode((s) => s.enabled);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
   // Live usage while this tab is open
   useFocusEffect(
     useCallback(() => {
-      const poll = () => { refreshUsage(); setServiceOn(SystemGuard.isGateServiceEnabled()); };
+      const poll = () => {
+        refreshUsage();
+        setServiceOn(SystemGuard.isGateServiceEnabled());
+        setUsageOn(SystemGuard.hasUsageAccess());
+        setDiag(SystemGuard.getGateDebug());
+      };
       poll();
       const id = setInterval(poll, 5000);
       return () => clearInterval(id);
@@ -48,7 +89,8 @@ export default function GateTab() {
     }
   };
 
-  const offline = rules.enabled && rules.apps.length > 0 && !serviceOn;
+  const needsSetup = rules.enabled && rules.apps.length > 0 && (!serviceOn || !usageOn);
+  const labelFor = (pkg: string) => rules.apps.find((a) => a.pkg === pkg)?.label ?? pkg;
 
   return (
     <SafeAreaView style={sharedStyles.screen} edges={['top']}>
@@ -60,20 +102,49 @@ export default function GateTab() {
           </SystemPanel>
         )}
 
-        {isSystemGuardAvailable && offline && (
-          <SystemPanel tone="danger" title="GATE OFFLINE" glowing>
+        {testMode && (
+          <SystemPanel tone="ember" title="TEST MODE IS ON">
             <Body>
-              The gate isn't watching your apps. Turn on <Text style={{ color: Colors.system }}>HabitForge Gate</Text> in
-              Accessibility settings.
+              The real gate is frozen while testing: rule changes and purchases here only affect the test copy. Exit test
+              mode in Settings to set up and use the real gate.
             </Body>
-            <Body muted style={{ fontSize: 12, marginTop: Space.sm }}>
-              Switch greyed out? Open App info, tap ⋮ (top right), choose "Allow restricted settings", then try again.
-            </Body>
-            <View style={styles.row}>
-              <SystemButton label="APP INFO" variant="outline" tone="danger" small onPress={SystemGuard.openAppDetails} style={{ flex: 1 }} />
-              <SystemButton label="ACCESSIBILITY" tone="danger" small onPress={SystemGuard.openAccessibilitySettings} style={{ flex: 1 }} />
-            </View>
           </SystemPanel>
+        )}
+
+        {isSystemGuardAvailable && !testMode && (needsSetup || showDiag) && (
+          <SystemPanel tone={needsSetup ? 'danger' : 'system'} title={needsSetup ? 'GATE SETUP' : 'GATE STATUS'} glowing={needsSetup}>
+            <SetupStep
+              done={usageOn}
+              title="1 · Usage access"
+              hint="Lets the gate read how long you spend in each app (the same data as Digital Wellbeing)."
+              action="OPEN USAGE ACCESS"
+              onPress={SystemGuard.openUsageAccessSettings}
+            />
+            <SetupStep
+              done={serviceOn}
+              title="2 · HabitForge Gate (Accessibility)"
+              hint={'Lets the gate close an app when its time runs out. Greyed out? App info → ⋮ → "Allow restricted settings" first.'}
+              action="ACCESSIBILITY"
+              onPress={SystemGuard.openAccessibilitySettings}
+              secondary={{ label: 'APP INFO', onPress: SystemGuard.openAppDetails }}
+            />
+            {diag && (
+              <Text style={styles.diag}>
+                {diag.connectedAt ? 'SERVICE ALIVE' : 'SERVICE NEVER STARTED'}
+                {diag.lastAt ? ` · LAST APP SEEN: ${labelFor(diag.lastPkg)} ${ago(diag.lastAt)}` : ''}
+                {`
+GATE KNOWS ${diag.configApps.length} APP(S)${diag.configEnabled ? '' : ' · GATE OFF'}`}
+              </Text>
+            )}
+            <TouchableOpacity onPress={() => setShowDiag((v) => !v)}>
+              <Text style={styles.diagToggle}>{showDiag ? 'HIDE STATUS' : ''}</Text>
+            </TouchableOpacity>
+          </SystemPanel>
+        )}
+        {isSystemGuardAvailable && !testMode && !needsSetup && !showDiag && (
+          <TouchableOpacity onPress={() => setShowDiag(true)}>
+            <Text style={styles.diagToggle}>✓ GATE ACTIVE · SHOW STATUS</Text>
+          </TouchableOpacity>
         )}
 
         <View style={styles.row}>
@@ -170,5 +241,9 @@ const styles = StyleSheet.create({
   appHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: Space.sm },
   appName: { fontFamily: Fonts.bodyBold, fontSize: 17, color: Colors.textPrimary },
   appLeft: { fontFamily: Fonts.display, fontSize: 14, letterSpacing: 1 },
+  step: { marginBottom: Space.md },
+  stepTitle: { fontFamily: Fonts.display, fontSize: 13, letterSpacing: 1 },
+  diag: { fontFamily: Fonts.displaySemi, fontSize: 10, letterSpacing: 1, color: Colors.textMuted, lineHeight: 16 },
+  diagToggle: { fontFamily: Fonts.displaySemi, fontSize: 10, letterSpacing: 1.5, color: Colors.success, marginBottom: Space.sm },
   appMeta: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted, marginTop: Space.sm },
 });

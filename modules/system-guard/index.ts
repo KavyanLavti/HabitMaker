@@ -14,6 +14,17 @@ export interface ReminderSpec {
   minutes: number;
 }
 
+export interface GateDebug {
+  /** When Android last connected the gate service (epoch ms, 0 = never). */
+  connectedAt: number;
+  /** Last foreground app the service saw, and when. */
+  lastPkg: string;
+  lastAt: number;
+  configDate: string;
+  configEnabled: boolean;
+  configApps: string[];
+}
+
 export interface GateConfig {
   date: string;
   enabled: boolean;
@@ -33,6 +44,9 @@ interface NativeSystemGuard {
   openExactAlarmSettings(): void;
   setGateConfig(json: string): void;
   getUsage(date: string): string;
+  hasUsageAccess(): boolean;
+  openUsageAccessSettings(): void;
+  getGateDebug(): string;
   isGateServiceEnabled(): boolean;
   openAccessibilitySettings(): void;
   openAppDetails(): void;
@@ -68,6 +82,12 @@ export const SystemGuard = {
   getUsage: (date: string): Record<string, number> => {
     if (!native) return {};
     try { return JSON.parse(native.getUsage(date)); } catch { return {}; }
+  },
+  hasUsageAccess: () => native?.hasUsageAccess() ?? false,
+  openUsageAccessSettings: () => native?.openUsageAccessSettings(),
+  getGateDebug: (): GateDebug | null => {
+    if (!native) return null;
+    try { return JSON.parse(native.getGateDebug()); } catch { return null; }
   },
   isGateServiceEnabled: () => native?.isGateServiceEnabled() ?? false,
   openAccessibilitySettings: () => native?.openAccessibilitySettings(),

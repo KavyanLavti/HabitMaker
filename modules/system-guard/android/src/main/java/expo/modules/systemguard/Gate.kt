@@ -1,7 +1,13 @@
 package expo.modules.systemguard
 
+import android.app.AppOpsManager
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.os.Build
+import android.os.Process
 import org.json.JSONObject
+import java.util.Calendar
 
 /**
  * Leisure-app rules written by JS:
@@ -19,6 +25,7 @@ internal class GateConfig(
   private val apps: Map<String, Pair<String, Int>>,
 ) {
   fun isLeisure(pkg: String) = enabled && apps.containsKey(pkg)
+  fun packages(): Set<String> = apps.keys
   fun label(pkg: String) = apps[pkg]?.first ?: pkg
 
   fun budgetMs(pkg: String): Long {
@@ -52,14 +59,85 @@ internal class GateConfig(
   }
 }
 
-/** Per-day foreground milliseconds for each leisure app, kept natively for 14 days. */
+/**
+ * Per-day foreground milliseconds for each leisure app.
+ *
+ * Two sources: Android's own usage stats (what Digital Wellbeing shows; needs "Usage access") and our
+ * accessibility-service counter (kept 14 days). When both exist the larger wins, so time is never lost
+ * because one of them missed it — e.g. the accessibility service being stopped by the system.
+ */
 internal object Usage {
   private fun key(date: String) = "usage_$date"
 
+  // UsageEvents.Event constants (ACTIVITY_RESUMED / ACTIVITY_PAUSED / ACTIVITY_STOPPED)
+  private const val RESUMED = 1
+  private const val PAUSED = 2
+  private const val STOPPED = 23
+
+  /** Our own accessibility-service counter only. */
   fun read(ctx: Context, date: String): JSONObject =
     try { JSONObject(Prefs.get(ctx).getString(key(date), "{}") ?: "{}") } catch (e: Exception) { JSONObject() }
 
-  fun msToday(ctx: Context, pkg: String): Long = read(ctx, Prefs.today()).optLong(pkg, 0L)
+  fun hasUsageAccess(ctx: Context): Boolean {
+    val ops = ctx.getSystemService(AppOpsManager::class.java) ?: return false
+    val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.packageName)
+    } else {
+      @Suppress("DEPRECATION")
+      ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.packageName)
+    }
+    return mode == AppOpsManager.MODE_ALLOWED
+  }
+
+  /** Foreground time per package on `date` from Android's usage events, or null without Usage access. */
+  private fun systemMs(ctx: Context, date: String, pkgs: Set<String>): Map<String, Long>? {
+    if (pkgs.isEmpty() || !hasUsageAccess(ctx)) return null
+    val usm = ctx.getSystemService(UsageStatsManager::class.java) ?: return null
+    val start = startOfDay(date) ?: return null
+    val now = System.currentTimeMillis()
+    val end = minOf(start + 86_400_000L, now)
+    if (end <= start) return emptyMap()
+
+    val totals = HashMap<String, Long>()
+    val openSince = HashMap<String, Long>()
+    val events = try { usm.queryEvents(start, end) } catch (e: Exception) { return null }
+    val e = UsageEvents.Event()
+    while (events.hasNextEvent()) {
+      events.getNextEvent(e)
+      val p = e.packageName ?: continue
+      if (p !in pkgs) continue
+      when (e.eventType) {
+        RESUMED -> if (p !in openSince) openSince[p] = e.timeStamp
+        PAUSED, STOPPED -> openSince.remove(p)?.let { totals[p] = (totals[p] ?: 0L) + (e.timeStamp - it) }
+      }
+    }
+    // Still in the foreground right now
+    if (end == now) openSince.forEach { (p, t) -> totals[p] = (totals[p] ?: 0L) + (now - t) }
+    return totals
+  }
+
+  private fun startOfDay(date: String): Long? = try {
+    val (y, m, d) = date.split("-").map { it.toInt() }
+    Calendar.getInstance().apply {
+      clear()
+      set(y, m - 1, d, 0, 0, 0)
+    }.timeInMillis
+  } catch (e: Exception) { null }
+
+  /** Best available usage for `date`: max of Android's usage stats and our own counter, per package. */
+  fun forDate(ctx: Context, date: String): JSONObject {
+    val counter = read(ctx, date)
+    val pkgs = GateConfig.load(ctx).packages() + counter.keys().asSequence().toSet()
+    val system = systemMs(ctx, date, pkgs) ?: return counter
+    val out = JSONObject()
+    for (p in pkgs) {
+      val ms = maxOf(counter.optLong(p, 0L), system[p] ?: 0L)
+      if (ms > 0) out.put(p, ms)
+    }
+    return out
+  }
+
+  fun msToday(ctx: Context, pkg: String): Long = forDate(ctx, Prefs.today()).optLong(pkg, 0L)
 
   fun add(ctx: Context, pkg: String, ms: Long) {
     if (ms <= 0) return
