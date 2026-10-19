@@ -5,7 +5,7 @@ import { addDaysKey, dateKeyOf, daysBetweenKeys, todayKey } from '@/lib/dates';
 /** % of days since creation on which the habit was done. */
 export function getConsistencyScore(completions: HabitCompletion[], createdAt: string): number {
   const days = Math.max(1, daysBetweenKeys(dateKeyOf(createdAt), todayKey()) + 1);
-  const unique = new Set(completions.map((c) => dateKeyOf(c.completedAt))).size;
+  const unique = new Set(completions.map((c) => c.date)).size;
   return Math.min(100, Math.round((unique / days) * 100));
 }
 
@@ -15,7 +15,7 @@ export function getDailyPointTotals(ledger: LedgerEntry[], days = 14): { date: s
   const totals: Record<string, number> = {};
   for (const e of ledger) {
     if (e.amount <= 0) continue;
-    const k = dateKeyOf(e.createdAt);
+    const k = e.date;
     totals[k] = (totals[k] ?? 0) + e.amount;
   }
   return Array.from({ length: days }, (_, i) => {
@@ -29,7 +29,7 @@ export function getHeatmap(completions: HabitCompletion[], days = 84): { date: s
   const today = todayKey();
   const counts: Record<string, number> = {};
   for (const c of completions) {
-    const k = dateKeyOf(c.completedAt);
+    const k = c.date;
     counts[k] = (counts[k] ?? 0) + 1;
   }
   return Array.from({ length: days }, (_, i) => {
@@ -40,7 +40,7 @@ export function getHeatmap(completions: HabitCompletion[], days = 84): { date: s
 
 /** "You tend to miss X on Mondays" when one weekday is missed 40%+ of the time over the last 60 days. */
 export function getMissPatternInsight(habitName: string, completions: HabitCompletion[], createdAt: string, days = 60): string | null {
-  const done = new Set(completions.map((c) => dateKeyOf(c.completedAt)));
+  const done = new Set(completions.map((c) => c.date));
   const start = dateKeyOf(createdAt);
   const today = todayKey();
   const seen = Array(7).fill(0);

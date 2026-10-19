@@ -3,7 +3,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { buildBackup } from './dataExport';
-import { getMeta, setMeta } from './db';
+import { getMeta, setMeta, activeDbName, REAL_DB } from './db';
 import { todayKey } from './dates';
 
 const TOKEN_KEY = 'github_backup_token';
@@ -99,6 +99,7 @@ async function describe(res: Response): Promise<string> {
 
 /** Pushes a backup now. Throws with a readable message on failure. */
 export async function backupNow(): Promise<void> {
+  if (activeDbName() !== REAL_DB) throw new Error('Test mode is on. Exit it first so the backup has your real data.');
   const { blob, repo } = await readSettings();
   const token = await getBackupToken();
   if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Set the repo as owner/repo in Settings.');
@@ -122,7 +123,7 @@ export async function backupNow(): Promise<void> {
 export async function runBackupIfDue(): Promise<'done' | 'skipped' | 'failed'> {
   try {
     const { enabled, repo } = await readSettings();
-    if (!enabled || !repo) return 'skipped';
+    if (!enabled || !repo || activeDbName() !== REAL_DB) return 'skipped';
     if (new Date().getHours() < BACKUP_HOUR) return 'skipped';
     if ((await getMeta('backup_last_date')) === todayKey()) return 'skipped';
     await backupNow();

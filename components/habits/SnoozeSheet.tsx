@@ -7,6 +7,7 @@ import { Habit } from '@/store/habitStore';
 import { useSnoozeStore } from '@/store/snoozeStore';
 import { atMinutes, formatHHMM, minutesNow, parseHHMM } from '@/lib/dates';
 import { SystemGuard } from '@/modules/system-guard';
+import { nowDate } from '@/lib/clock';
 
 const QUICK = [15, 30, 60, 120];
 
@@ -40,7 +41,7 @@ export function SnoozeSheet({ habit, onClose, onSnoozed }: Props) {
   };
 
   const pick = () => {
-    const d = new Date();
+    const d = nowDate();
     d.setMinutes(d.getMinutes() + 30);
     DateTimePickerAndroid.open({
       value: d,

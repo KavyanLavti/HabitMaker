@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { runQuery, runMutation, newId } from '@/lib/db';
 import { dateKeyOf, todayKey, daysBetweenKeys } from '@/lib/dates';
 import { computeStreak, StreakState } from '@/lib/streaks';
+import { nowIso } from '@/lib/clock';
 
 export type ScheduleType = 'fixed' | 'window' | 'anytime';
 
@@ -29,6 +30,8 @@ export interface HabitCompletion {
   id: string;
   habitId: string;
   completedAt: string;
+  /** Local calendar day of the completion, "YYYY-MM-DD". */
+  date: string;
   durationMinutes: number;
   timerUsed: boolean;
 }
@@ -48,7 +51,7 @@ interface HabitStore {
   trashHabit: (id: string) => Promise<void>;
   restoreHabit: (id: string) => Promise<void>;
   purgeHabit: (id: string) => Promise<void>;
-  addCompletion: (c: Omit<HabitCompletion, 'id'>) => Promise<HabitCompletion>;
+  addCompletion: (c: Omit<HabitCompletion, 'id' | 'date'>) => Promise<HabitCompletion>;
   getCompletionsForHabit: (habitId: string) => HabitCompletion[];
   isCompletedToday: (habitId: string) => boolean;
   getStreakState: (habitId: string) => StreakState;
@@ -89,7 +92,7 @@ export const useHabitStore = create<HabitStore>((set, get) => ({
     }
     const all = (await runQuery<any>('SELECT * FROM habits ORDER BY scheduledTime ASC')).map(rowToHabit);
     const completions = (await runQuery<any>('SELECT * FROM habit_completions ORDER BY completedAt DESC'))
-      .map((c) => ({ ...c, timerUsed: Boolean(c.timerUsed) }));
+      .map((c) => ({ ...c, timerUsed: Boolean(c.timerUsed), date: c.date ?? dateKeyOf(c.completedAt) }));
     set({
       habits: all.filter((h) => !h.archivedAt && !h.deletedAt),
       trash: all.filter((h) => !!h.deletedAt),
@@ -99,7 +102,7 @@ export const useHabitStore = create<HabitStore>((set, get) => ({
   },
 
   addHabit: async (data) => {
-    const habit: Habit = { ...data, id: newId(), createdAt: new Date().toISOString(), archivedAt: null, deletedAt: null };
+    const habit: Habit = { ...data, id: newId(), createdAt: nowIso(), archivedAt: null, deletedAt: null };
     await runMutation(
       `INSERT INTO habits (id,name,urgencyLevel,pointsPerCompletion,dailyDurationMinutes,
        scheduledTime,totalDays,isDaily,createdAt,archivedAt,scheduleType,windowEnd,deletedAt)
@@ -124,12 +127,12 @@ export const useHabitStore = create<HabitStore>((set, get) => ({
   },
 
   archiveHabit: async (id) => {
-    await runMutation('UPDATE habits SET archivedAt=? WHERE id=?', [new Date().toISOString(), id]);
+    await runMutation('UPDATE habits SET archivedAt=? WHERE id=?', [nowIso(), id]);
     set((s) => ({ habits: s.habits.filter((h) => h.id !== id) }));
   },
 
   trashHabit: async (id) => {
-    const deletedAt = new Date().toISOString();
+    const deletedAt = nowIso();
     await runMutation('UPDATE habits SET deletedAt=? WHERE id=?', [deletedAt, id]);
     set((s) => {
       const h = s.habits.find((x) => x.id === id);
@@ -161,10 +164,10 @@ export const useHabitStore = create<HabitStore>((set, get) => ({
   },
 
   addCompletion: async (data) => {
-    const c: HabitCompletion = { ...data, id: newId() };
+    const c: HabitCompletion = { ...data, id: newId(), date: dateKeyOf(data.completedAt) };
     await runMutation(
-      `INSERT INTO habit_completions (id,habitId,completedAt,durationMinutes,timerUsed) VALUES (?,?,?,?,?)`,
-      [c.id, c.habitId, c.completedAt, c.durationMinutes, c.timerUsed ? 1 : 0]
+      `INSERT INTO habit_completions (id,habitId,completedAt,date,durationMinutes,timerUsed) VALUES (?,?,?,?,?,?)`,
+      [c.id, c.habitId, c.completedAt, c.date, c.durationMinutes, c.timerUsed ? 1 : 0]
     );
     set((s) => ({ completions: [c, ...s.completions] }));
     return c;
@@ -174,14 +177,14 @@ export const useHabitStore = create<HabitStore>((set, get) => ({
 
   isCompletedToday: (habitId) => {
     const today = todayKey();
-    return get().completions.some((c) => c.habitId === habitId && dateKeyOf(c.completedAt) === today);
+    return get().completions.some((c) => c.habitId === habitId && c.date === today);
   },
 
   getCompletionCount: (habitId) => get().completions.filter((c) => c.habitId === habitId).length,
 
   getStreakState: (habitId) => {
     const habit = get().habits.find((h) => h.id === habitId) ?? get().trash.find((h) => h.id === habitId);
-    const keys = get().completions.filter((c) => c.habitId === habitId).map((c) => dateKeyOf(c.completedAt));
+    const keys = get().completions.filter((c) => c.habitId === habitId).map((c) => c.date);
     const start = habit ? dateKeyOf(habit.createdAt) : todayKey();
     return computeStreak(start, keys, todayKey());
   },

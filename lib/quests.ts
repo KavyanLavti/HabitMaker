@@ -2,7 +2,8 @@ import { useHabitStore, Habit } from '@/store/habitStore';
 import { usePointStore } from '@/store/pointStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { calculateEarnedPoints, getConsecutivePerfectDays, isPerfectDay } from '@/lib/pointEngine';
-import { addDaysKey, dateKeyOf, todayKey } from '@/lib/dates';
+import { addDaysKey, dateKey, todayKey } from '@/lib/dates';
+import { nowDate } from '@/lib/clock';
 import { SystemGuard } from '@/modules/system-guard';
 
 export interface QuestResult {
@@ -20,13 +21,13 @@ export async function completeQuest(
   durationMinutes: number,
   timerUsed: boolean,
   /** Defaults to now. A past date (e.g. yesterday's unfinished timer) records there and skips day bonuses. */
-  at: Date = new Date()
+  at: Date = nowDate()
 ): Promise<QuestResult> {
   const hs = useHabitStore.getState();
   const ps = usePointStore.getState();
   const { settings } = useSettingsStore.getState();
   const today = todayKey();
-  const isToday = dateKeyOf(at.toISOString()) === today;
+  const isToday = dateKey(at) === today;
 
   const streakBefore = hs.getStreakState(habit.id).streak;
   const fraction = timerUsed
@@ -36,7 +37,7 @@ export async function completeQuest(
 
   const activeIds = hs.habits.map((h) => h.id);
   const byDate: Record<string, string[]> = {};
-  for (const c of hs.completions) (byDate[dateKeyOf(c.completedAt)] ??= []).push(c.habitId);
+  for (const c of hs.completions) (byDate[c.date] ??= []).push(c.habitId);
   const doneTodayBefore = byDate[today] ?? [];
   const wasPerfect = isPerfectDay(activeIds, doneTodayBefore);
   const days = Array.from({ length: 30 }, (_, i) => addDaysKey(today, -i));
@@ -57,7 +58,7 @@ export async function completeQuest(
     reason: fraction < 1
       ? `Partial (${Math.round(fraction * 100)}%): ${habit.name}`
       : `Cleared: ${habit.name} (${streakBefore + 1}-day streak ×${result.streakMultiplier})`,
-  });
+  }, at);
 
   const bonuses: string[] = [];
   const nowPerfect = isPerfectDay(activeIds, [...doneTodayBefore, habit.id]);

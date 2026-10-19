@@ -1,4 +1,5 @@
 import { runQuery, getDb } from './db';
+import { dateKeyOf } from './dates';
 
 export interface AppBackup {
   version: 2 | 3;
@@ -71,15 +72,15 @@ export async function restoreFromBackup(jsonString: string): Promise<AppBackup> 
 
     for (const c of backup.completions) {
       await db.runAsync(
-        `INSERT OR IGNORE INTO habit_completions (id,habitId,completedAt,durationMinutes,timerUsed) VALUES (?,?,?,?,?)`,
-        [c.id, c.habitId, c.completedAt, c.durationMinutes, c.timerUsed ? 1 : 0]
+        `INSERT OR IGNORE INTO habit_completions (id,habitId,completedAt,date,durationMinutes,timerUsed) VALUES (?,?,?,?,?,?)`,
+        [c.id, c.habitId, c.completedAt, c.date ?? dateKeyOf(c.completedAt), c.durationMinutes, c.timerUsed ? 1 : 0]
       );
     }
 
     for (const l of backup.pointLedger) {
       await db.runAsync(
-        `INSERT OR IGNORE INTO point_ledger (id,habitId,type,amount,reason,createdAt) VALUES (?,?,?,?,?,?)`,
-        [l.id, l.habitId ?? null, l.type, l.amount, l.reason, l.createdAt]
+        `INSERT OR IGNORE INTO point_ledger (id,habitId,type,amount,reason,createdAt,date) VALUES (?,?,?,?,?,?,?)`,
+        [l.id, l.habitId ?? null, l.type, l.amount, l.reason, l.createdAt, l.date ?? dateKeyOf(l.createdAt)]
       );
     }
 

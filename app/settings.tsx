@@ -9,10 +9,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Fonts, Space } from '@/constants/theme';
 import { SystemPanel, SystemButton, ScreenHeader, Body, sharedStyles } from '@/components/ui/System';
 import { useSettingsStore, Settings } from '@/store/settingsStore';
-import { usePointStore } from '@/store/pointStore';
-import { useHabitStore } from '@/store/habitStore';
-import { useRewardStore } from '@/store/rewardStore';
-import { useGateStore } from '@/store/gateStore';
+import { reloadAll } from '@/lib/reload';
+import { TestModePanel } from '@/components/TestModePanel';
 import { buildBackupJson, restoreFromBackup } from '@/lib/dataExport';
 import {
   backupNow, fetchLatestBackup, getBackupStatus, getBackupToken, setBackupToken, BackupStatus, BACKUP_HOUR,
@@ -52,15 +50,6 @@ function SwitchRow({ label, value, onChange }: { label: string; value: boolean; 
   );
 }
 
-async function reloadEverything() {
-  await Promise.all([
-    useHabitStore.getState().loadAll(),
-    usePointStore.getState().loadPoints(),
-    useRewardStore.getState().loadRewards(),
-    useGateStore.getState().load(),
-  ]);
-}
-
 async function applyBackup(json: string) {
   const backup = await restoreFromBackup(json);
   if (backup.settings) {
@@ -80,7 +69,7 @@ async function applyBackup(json: string) {
     await AsyncStorage.setItem('settings-store', JSON.stringify(merged));
     await useSettingsStore.persist.rehydrate();
   }
-  await reloadEverything();
+  await reloadAll();
 }
 
 export default function SettingsScreen() {
@@ -189,6 +178,8 @@ export default function SettingsScreen() {
         }
       />
       <ScrollView contentContainerStyle={{ padding: Space.lg, paddingTop: 0, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+        <TestModePanel />
+
         <SystemPanel title="PLAYER">
           <Text style={sharedStyles.inputLabel}>NAME</Text>
           <TextInput style={sharedStyles.input} value={settings.displayName} onChangeText={(t) => up('displayName', t)} />

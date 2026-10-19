@@ -1,12 +1,40 @@
 import * as SQLite from 'expo-sqlite';
+import { dateKeyOf } from './dates';
+import { nowIso } from './clock';
 
+export const REAL_DB = 'habitforge.db';
+/** Sandbox copy used by test mode, so simulated days never touch real data. */
+export const TEST_DB = 'habitforge-test.db';
+
+let _dbName = REAL_DB;
 let _db: SQLite.SQLiteDatabase | null = null;
 let _dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
+
+export function activeDbName() {
+  return _dbName;
+}
+
+/** Points all queries at another database file. With `fresh`, that file is deleted first. */
+export async function switchDatabase(name: string, opts: { fresh?: boolean } = {}) {
+  const current = _db ?? (_dbPromise ? await _dbPromise : null);
+  if (current) await current.closeAsync();
+  _db = null;
+  _dbPromise = null;
+  _dbName = name;
+  if (opts.fresh) {
+    try { await SQLite.deleteDatabaseAsync(name); } catch {}
+  }
+}
+
+export async function deleteDatabase(name: string) {
+  if (name === _dbName) throw new Error('Cannot delete the active database');
+  try { await SQLite.deleteDatabaseAsync(name); } catch {}
+}
 
 export async function getDb(): Promise<SQLite.SQLiteDatabase> {
   if (_db) return _db;
   if (!_dbPromise) {
-    _dbPromise = SQLite.openDatabaseAsync('habitforge.db').then(async (db) => {
+    _dbPromise = SQLite.openDatabaseAsync(_dbName).then(async (db) => {
       await initSchema(db);
       _db = db;
       return db;
@@ -89,6 +117,23 @@ async function initSchema(db: SQLite.SQLiteDatabase) {
   try { await db.execAsync('ALTER TABLE habits ADD COLUMN windowEnd TEXT'); } catch {}
   try { await db.execAsync('ALTER TABLE habits ADD COLUMN deletedAt TEXT'); } catch {}
 
+  // v2.1: every event row carries its local calendar day ("YYYY-MM-DD") so analytics can group by date
+  // without timezone maths. Rows from before this get backfilled from their timestamps.
+  try { await db.execAsync('ALTER TABLE habit_completions ADD COLUMN date TEXT'); } catch {}
+  try { await db.execAsync('ALTER TABLE point_ledger ADD COLUMN date TEXT'); } catch {}
+  for (const [table, tsCol] of [['habit_completions', 'completedAt'], ['point_ledger', 'createdAt']] as const) {
+    const rows = await db.getAllAsync<{ id: string; ts: string }>(
+      `SELECT id, ${tsCol} AS ts FROM ${table} WHERE date IS NULL`
+    );
+    for (const r of rows) await db.runAsync(`UPDATE ${table} SET date=? WHERE id=?`, [dateKeyOf(r.ts), r.id]);
+  }
+  await db.execAsync(`
+    CREATE INDEX IF NOT EXISTS idx_completions_date ON habit_completions(date);
+    CREATE INDEX IF NOT EXISTS idx_completions_habit ON habit_completions(habitId, date);
+    CREATE INDEX IF NOT EXISTS idx_ledger_date ON point_ledger(date);
+    CREATE INDEX IF NOT EXISTS idx_grants_date ON screen_time_grants(date);
+  `);
+
   // Seed default data on first launch
   const seeded = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_meta WHERE key='seeded'");
   if (!seeded) {
@@ -116,7 +161,7 @@ export function newId() {
 }
 
 async function seedData(db: SQLite.SQLiteDatabase) {
-  const now = new Date().toISOString();
+  const now = nowIso();
   const habits = [
     { id: newId(), name: 'Morning Workout', urgencyLevel: 3, pointsPerCompletion: 30, dailyDurationMinutes: 30, scheduledTime: '07:00', totalDays: 30, isDaily: 1 },
     { id: newId(), name: 'Read a Book', urgencyLevel: 2, pointsPerCompletion: 20, dailyDurationMinutes: 20, scheduledTime: '21:00', totalDays: null, isDaily: 1 },

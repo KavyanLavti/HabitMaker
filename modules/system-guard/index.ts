@@ -44,18 +44,26 @@ const native = Platform.OS === 'android' ? requireOptionalNativeModule<NativeSys
 
 export const isSystemGuardAvailable = native != null;
 
+// In test mode the app runs on a copy of your data with a simulated clock. Real alarms, notifications
+// and gate limits must not change because of that, so writes are dropped while sandboxed.
+let sandboxed = false;
+export function setSystemGuardSandbox(on: boolean) {
+  sandboxed = on;
+}
+const live = () => (sandboxed ? null : native);
+
 export const SystemGuard = {
-  setReminders: (specs: ReminderSpec[]) => native?.setReminders(JSON.stringify(specs)),
-  markHandled: (id: string) => native?.markHandled(id),
-  clearHandled: (id: string) => native?.clearHandled(id),
-  snoozeReminder: (id: string, atMillis: number) => native?.snoozeReminder(id, atMillis),
+  setReminders: (specs: ReminderSpec[]) => live()?.setReminders(JSON.stringify(specs)),
+  markHandled: (id: string) => live()?.markHandled(id),
+  clearHandled: (id: string) => live()?.clearHandled(id),
+  snoozeReminder: (id: string, atMillis: number) => live()?.snoozeReminder(id, atMillis),
   showTimer: (id: string, name: string, endAt: number) => native?.showTimer(id, name, endAt),
   cancelTimer: () => native?.cancelTimer(),
   notificationsEnabled: () => native?.notificationsEnabled() ?? false,
   canScheduleExactAlarms: () => native?.canScheduleExactAlarms() ?? false,
   openExactAlarmSettings: () => native?.openExactAlarmSettings(),
 
-  setGateConfig: (config: GateConfig) => native?.setGateConfig(JSON.stringify(config)),
+  setGateConfig: (config: GateConfig) => live()?.setGateConfig(JSON.stringify(config)),
   /** Milliseconds in each leisure app on `date` (YYYY-MM-DD). */
   getUsage: (date: string): Record<string, number> => {
     if (!native) return {};

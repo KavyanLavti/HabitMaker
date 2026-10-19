@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { runQuery, runMutation } from '@/lib/db';
+import { nowIso } from '@/lib/clock';
 
 export interface Reward {
   id: string;
@@ -63,7 +64,7 @@ export const useRewardStore = create<RewardStore>((set, get) => ({
   },
 
   claimReward: async (id) => {
-    const claimedAt = new Date().toISOString();
+    const claimedAt = nowIso();
     const reward = get().rewards.find((r) => r.id === id);
     if (!reward) return;
 

@@ -15,7 +15,8 @@ import { usePointStore } from '@/store/pointStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useSnoozeStore } from '@/store/snoozeStore';
 import { completeQuest } from '@/lib/quests';
-import { dateKeyOf, parseHHMM, todayKey } from '@/lib/dates';
+import { describeKey, parseHHMM, todayKey } from '@/lib/dates';
+import { useTestMode } from '@/lib/testMode';
 import { SystemGuard } from '@/modules/system-guard';
 
 type DeepLink = { start?: string; snooze?: string; quest?: string; timer?: string };
@@ -39,12 +40,15 @@ export default function TodayTab() {
   const [toast, setToast] = useState<{ title: string; lines: string[] } | null>(null);
 
   const today = todayKey();
+  const dayInfo = describeKey(today);
+  const testMode = useTestMode((s) => s.enabled);
+  useTestMode((s) => s.offsetMs); // re-render when simulated time moves
   const level = Math.floor(lifetime / settings.pointsPerLevel) + 1;
   const rank = rankFor(level);
 
   const completedByHabit = useMemo(() => {
     const m: Record<string, Set<string>> = {};
-    for (const c of completions) (m[c.habitId] ??= new Set()).add(dateKeyOf(c.completedAt));
+    for (const c of completions) (m[c.habitId] ??= new Set()).add(c.date);
     return m;
   }, [completions]);
   const isDone = (id: string) => completedByHabit[id]?.has(today) ?? false;
@@ -112,7 +116,14 @@ export default function TodayTab() {
 
   return (
     <SafeAreaView style={sharedStyles.screen} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, testMode && { paddingBottom: 110 }]}>
+        {/* Today's day and date */}
+        <View style={styles.dateBar}>
+          <Text style={styles.dayName}>{dayInfo.day}</Text>
+          <Text style={styles.dateText}>{dayInfo.date}</Text>
+          {testMode && <Text style={styles.simTag}>SIMULATED</Text>}
+        </View>
+
         {/* Player header */}
         <View style={styles.header}>
           <RankEmblem level={level} size={64} />
@@ -129,9 +140,6 @@ export default function TodayTab() {
         {/* Daily quest summary */}
         <SystemPanel title="DAILY QUEST" glowing={clearedCount === habits.length && habits.length > 0}
           tone={clearedCount === habits.length && habits.length > 0 ? 'success' : 'system'}>
-          <Text style={styles.date}>
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase()}
-          </Text>
           <View style={styles.progressRow}>
             <Text style={styles.progressText}>
               CLEARED <Text style={{ color: Colors.system }}>{clearedCount}</Text> / {habits.length}
@@ -228,7 +236,13 @@ const styles = StyleSheet.create({
   points: { alignItems: 'flex-end' },
   pointsVal: { fontFamily: Fonts.display, fontSize: 28, color: Colors.gold },
   pointsLabel: { fontFamily: Fonts.displaySemi, fontSize: 9, letterSpacing: 2, color: Colors.textMuted },
-  date: { fontFamily: Fonts.displaySemi, fontSize: 12, letterSpacing: 1.5, color: Colors.textSecondary },
+  dateBar: { flexDirection: 'row', alignItems: 'baseline', gap: Space.sm, marginBottom: Space.md, flexWrap: 'wrap' },
+  dayName: { fontFamily: Fonts.display, fontSize: 24, letterSpacing: 3, color: Colors.system },
+  dateText: { fontFamily: Fonts.displaySemi, fontSize: 14, letterSpacing: 1.5, color: Colors.textSecondary },
+  simTag: {
+    fontFamily: Fonts.display, fontSize: 9, letterSpacing: 2, color: Colors.ember,
+    borderColor: Colors.ember, borderWidth: 1, borderRadius: 2, paddingHorizontal: 5, paddingVertical: 1,
+  },
   progressRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Space.sm, marginBottom: Space.sm },
   progressText: { fontFamily: Fonts.display, fontSize: 16, letterSpacing: 1.5, color: Colors.textPrimary },
   perfect: { fontFamily: Fonts.display, fontSize: 13, letterSpacing: 1.5, color: Colors.success },

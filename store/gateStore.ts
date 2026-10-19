@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { runQuery, runMutation, getMeta, setMeta, newId } from '@/lib/db';
 import { todayKey, addDaysKey } from '@/lib/dates';
+import { nowIso } from '@/lib/clock';
 import {
   GateRules, defaultGateRules, PACK_MINUTES, rollBank, splitRulesChange, unusedEarnedMinutes,
 } from '@/lib/gate';
@@ -88,8 +89,8 @@ export const useGateStore = create<GateStore>((set, get) => {
       // Roll every finished day's unused earned minutes into the bank
       let bank = Number(await getMeta(K.bank)) || 0;
       const yesterday = addDaysKey(today, -1);
-      let through = await getMeta(K.bankThrough);
-      if (!through) through = yesterday; // first run: nothing to roll
+      const stored = await getMeta(K.bankThrough);
+      let through = stored || yesterday; // first run: nothing to roll
       // The native tracker keeps 14 days, so never look back further than that
       if (through < addDaysKey(today, -14)) through = addDaysKey(today, -14);
       for (let d = addDaysKey(through, 1); d <= yesterday; d = addDaysKey(d, 1)) {
@@ -97,7 +98,8 @@ export const useGateStore = create<GateStore>((set, get) => {
         bank = rollBank(bank, unused);
       }
       await setMeta(K.bank, String(bank));
-      await setMeta(K.bankThrough, yesterday);
+      // Only ever move the bookmark forward, so going back in time (test mode) never rolls a day in twice
+      if (!stored || yesterday > stored) await setMeta(K.bankThrough, yesterday);
 
       set({
         loaded: true,
@@ -151,7 +153,7 @@ export const useGateStore = create<GateStore>((set, get) => {
       const today = todayKey();
       await runMutation(
         'INSERT INTO screen_time_grants (id,date,packageName,minutes,source,createdAt) VALUES (?,?,?,?,?,?)',
-        [newId(), today, pkg, minutes, source, new Date().toISOString()]
+        [newId(), today, pkg, minutes, source, nowIso()]
       );
       set({ todayGrants: await grantsFor(today) });
       syncNative();

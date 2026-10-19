@@ -11,14 +11,15 @@ import 'react-native-reanimated';
 
 import { Colors } from '@/constants/theme';
 import { useHabitStore } from '@/store/habitStore';
-import { usePointStore } from '@/store/pointStore';
-import { useRewardStore } from '@/store/rewardStore';
 import { useGateStore } from '@/store/gateStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { syncReminders, requestNotificationPermission } from '@/lib/notificationScheduler';
 import { registerBackgroundTasks } from '@/lib/backgroundTasks';
 import { runBackupIfDue } from '@/lib/backup';
-import { dateKeyOf, todayKey } from '@/lib/dates';
+import { todayKey } from '@/lib/dates';
+import { reloadAll } from '@/lib/reload';
+import { initTestMode } from '@/lib/testMode';
+import { TestModeBanner } from '@/components/TestModeBanner';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -55,6 +56,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
       </Stack>
+      <TestModeBanner />
     </ThemeProvider>
   );
 }
@@ -67,10 +69,8 @@ function useBootstrap() {
   const settings = useSettingsStore((s) => s.settings);
 
   useEffect(() => {
-    useHabitStore.getState().loadAll();
-    usePointStore.getState().loadPoints();
-    useRewardStore.getState().loadRewards();
-    useGateStore.getState().load();
+    // Resume a test-mode session (sandbox database + simulated clock) before anything reads data
+    initTestMode().then(reloadAll);
     requestNotificationPermission();
     registerBackgroundTasks();
     runBackupIfDue();
@@ -81,8 +81,7 @@ function useBootstrap() {
       const gate = useGateStore.getState();
       if (todayKey() !== lastDay) {
         lastDay = todayKey();
-        useHabitStore.getState().loadAll();
-        gate.load(); // applies delayed rule changes and rolls the bank
+        reloadAll(); // gate load applies delayed rule changes and rolls the bank
       } else {
         gate.refreshUsage();
       }
@@ -95,7 +94,7 @@ function useBootstrap() {
   useEffect(() => {
     if (!habitsLoaded) return;
     const today = todayKey();
-    const doneToday = completions.filter((c) => dateKeyOf(c.completedAt) === today).map((c) => c.habitId);
+    const doneToday = completions.filter((c) => c.date === today).map((c) => c.habitId);
     syncReminders(habits, settings, doneToday);
   }, [habitsLoaded, habits, settings.notificationsEnabled, settings.notifyMinutesBefore]);
 }
