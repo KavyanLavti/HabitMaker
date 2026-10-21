@@ -14,7 +14,14 @@ import androidx.core.app.NotificationManagerCompat
 import org.json.JSONArray
 import java.util.Calendar
 
-internal data class ReminderSpec(val id: String, val title: String, val body: String, val minutes: Int)
+/** `overrides`: one-day time changes, "YYYY-MM-DD" → minutes after midnight (-1 = no alert that day). */
+internal data class ReminderSpec(
+  val id: String,
+  val title: String,
+  val body: String,
+  val minutes: Int,
+  val overrides: Map<String, Int> = emptyMap(),
+)
 
 /**
  * Quest reminders that can't be swiped away.
@@ -55,7 +62,9 @@ internal object Reminders {
     val arr = try { JSONArray(raw) } catch (e: Exception) { JSONArray() }
     return (0 until arr.length()).map {
       val o = arr.getJSONObject(it)
-      ReminderSpec(o.getString("id"), o.getString("title"), o.optString("body", ""), o.getInt("minutes"))
+      val ov = o.optJSONObject("overrides")
+      val overrides = ov?.keys()?.asSequence()?.associateWith { k -> ov!!.getInt(k) } ?: emptyMap()
+      ReminderSpec(o.getString("id"), o.getString("title"), o.optString("body", ""), o.getInt("minutes"), overrides)
     }
   }
 
@@ -76,17 +85,24 @@ internal object Reminders {
     specs(ctx).forEach { scheduleNextDaily(ctx, it) }
   }
 
+  /** Next alert: the first upcoming day's time, using that day's override when there is one. */
   private fun scheduleNextDaily(ctx: Context, spec: ReminderSpec) {
-    val cal = Calendar.getInstance().apply {
-      set(Calendar.HOUR_OF_DAY, spec.minutes / 60)
-      set(Calendar.MINUTE, spec.minutes % 60)
-      set(Calendar.SECOND, 0)
-      set(Calendar.MILLISECOND, 0)
+    val now = System.currentTimeMillis()
+    for (offset in 0..30) {
+      val cal = Calendar.getInstance().apply {
+        add(Calendar.DAY_OF_MONTH, offset)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+      }
+      val minutes = spec.overrides[Prefs.dateKey(cal.timeInMillis)] ?: spec.minutes
+      if (minutes < 0) continue
+      cal.set(Calendar.HOUR_OF_DAY, minutes / 60)
+      cal.set(Calendar.MINUTE, minutes % 60)
+      if (cal.timeInMillis <= now) continue
+      if (offset == 0 && isHandledToday(ctx, spec.id)) continue
+      setAlarm(ctx, cal.timeInMillis, broadcastPI(ctx, ACTION_FIRE, spec.id, KIND_DAILY))
+      return
     }
-    if (cal.timeInMillis <= System.currentTimeMillis() || isHandledToday(ctx, spec.id)) {
-      cal.add(Calendar.DAY_OF_MONTH, 1)
-    }
-    setAlarm(ctx, cal.timeInMillis, broadcastPI(ctx, ACTION_FIRE, spec.id, KIND_DAILY))
   }
 
   // ── Handled state ─────────────────────────────────────────────────────────

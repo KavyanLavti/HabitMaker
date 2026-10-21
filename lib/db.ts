@@ -132,6 +132,42 @@ async function initSchema(db: SQLite.SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_completions_habit ON habit_completions(habitId, date);
     CREATE INDEX IF NOT EXISTS idx_ledger_date ON point_ledger(date);
     CREATE INDEX IF NOT EXISTS idx_grants_date ON screen_time_grants(date);
+
+    -- v2.2: one-day schedule changes ("Wednesday's gym moves to 18:00"). time is "HH:MM", or NULL to skip that day
+    CREATE TABLE IF NOT EXISTS habit_overrides (
+      habitId TEXT NOT NULL,
+      date TEXT NOT NULL,
+      time TEXT,
+      PRIMARY KEY (habitId, date)
+    );
+
+    -- Calendar events HabitForge created, so they can be updated or removed later
+    CREATE TABLE IF NOT EXISTS calendar_events (
+      habitId TEXT NOT NULL,
+      date TEXT NOT NULL,
+      eventId TEXT NOT NULL,
+      startMs INTEGER NOT NULL,
+      endMs INTEGER NOT NULL,
+      PRIMARY KEY (habitId, date)
+    );
+
+    -- Gym: reusable exercise list, and every logged set keyed by date
+    CREATE TABLE IF NOT EXISTS exercises (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      createdAt TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS workout_sets (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      exerciseId TEXT NOT NULL,
+      setIndex INTEGER NOT NULL,
+      reps INTEGER NOT NULL,
+      weightKg REAL NOT NULL,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sets_date ON workout_sets(date);
+    CREATE INDEX IF NOT EXISTS idx_sets_exercise ON workout_sets(exerciseId, date);
   `);
 
   // Seed default data on first launch

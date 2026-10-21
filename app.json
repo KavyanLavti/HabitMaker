@@ -2,7 +2,7 @@
   "expo": {
     "name": "HabitForge",
     "slug": "HabitForge",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "habitforge",
@@ -47,7 +47,13 @@
       ],
       "@react-native-community/datetimepicker",
       "expo-status-bar",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "HabitForge reads your calendars to spot clashes with your quests, and adds your quests to the calendar you choose."
+        }
+      ]
     ],
     "updates": {
       "url": "https://u.expo.dev/deda73af-f547-4c7e-85c4-8c505374d462",

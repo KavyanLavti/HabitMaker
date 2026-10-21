@@ -5,6 +5,8 @@ import { calculateEarnedPoints, getConsecutivePerfectDays, isPerfectDay } from '
 import { addDaysKey, dateKey, todayKey } from '@/lib/dates';
 import { nowDate } from '@/lib/clock';
 import { SystemGuard } from '@/modules/system-guard';
+import { playFx } from '@/store/fxStore';
+import { rankFor } from '@/constants/theme';
 
 export interface QuestResult {
   points: number;
@@ -29,7 +31,10 @@ export async function completeQuest(
   const today = todayKey();
   const isToday = dateKey(at) === today;
 
-  const streakBefore = hs.getStreakState(habit.id).streak;
+  const before = hs.getStreakState(habit.id);
+  const streakBefore = before.streak;
+  const levelOf = (lifetime: number) => Math.floor(lifetime / settings.pointsPerLevel) + 1;
+  const levelBefore = levelOf(ps.lifetimePoints);
   const fraction = timerUsed
     ? Math.min(durationMinutes / Math.max(1, habit.dailyDurationMinutes), 1)
     : 1;
@@ -84,5 +89,29 @@ export async function completeQuest(
     bonuses.push(`QUEST COMPLETE +${bonus}`);
   }
 
+  // Celebrations (only for live completions, not a backdated timer session)
+  if (isToday) {
+    const after = useHabitStore.getState().getStreakState(habit.id);
+    playFx({
+      kind: 'cleared',
+      title: habit.name,
+      points: result.total,
+      streak: after.streak,
+      bonuses,
+      freezeEarned: after.freezes > before.freezes,
+      avoid: habit.scheduleType === 'avoid',
+    });
+    const levelAfter = levelOf(usePointStore.getState().lifetimePoints);
+    if (levelAfter > levelBefore) {
+      playFx({ kind: 'levelup', level: levelAfter, rankFrom: rankFor(levelBefore).rank, rankTo: rankFor(levelAfter).rank });
+    }
+  }
+
   return { points: result.total, streak: streakBefore + 1, bonuses };
+}
+
+/** Avoid-habit check-in answered "I slipped": no credit today; the reminder is cleared. */
+export function logSlip(habit: Habit) {
+  SystemGuard.markHandled(habit.id);
+  playFx({ kind: 'slip', name: habit.name, freezes: useHabitStore.getState().getStreakState(habit.id).freezes });
 }

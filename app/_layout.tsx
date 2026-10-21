@@ -18,8 +18,10 @@ import { registerBackgroundTasks } from '@/lib/backgroundTasks';
 import { runBackupIfDue } from '@/lib/backup';
 import { todayKey } from '@/lib/dates';
 import { reloadAll } from '@/lib/reload';
+import { useScheduleStore } from '@/store/scheduleStore';
 import { initTestMode } from '@/lib/testMode';
 import { TestModeBanner } from '@/components/TestModeBanner';
+import { CelebrationOverlay } from '@/components/fx/CelebrationOverlay';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -55,8 +57,11 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: Colors.background } }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="gym" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="schedule" options={{ animation: 'slide_from_bottom' }} />
       </Stack>
       <TestModeBanner />
+      <CelebrationOverlay />
     </ThemeProvider>
   );
 }
@@ -67,6 +72,7 @@ function useBootstrap() {
   const completions = useHabitStore((s) => s.completions);
   const habitsLoaded = useHabitStore((s) => s.loaded);
   const settings = useSettingsStore((s) => s.settings);
+  const overrides = useScheduleStore((s) => s.overrides);
 
   useEffect(() => {
     // Resume a test-mode session (sandbox database + simulated clock) before anything reads data
@@ -84,6 +90,7 @@ function useBootstrap() {
         reloadAll(); // gate load applies delayed rule changes and rolls the bank
       } else {
         gate.refreshUsage();
+        useScheduleStore.getState().refresh(); // picks up events added in the calendar meanwhile
       }
       runBackupIfDue();
     });
@@ -95,6 +102,14 @@ function useBootstrap() {
     if (!habitsLoaded) return;
     const today = todayKey();
     const doneToday = completions.filter((c) => c.date === today).map((c) => c.habitId);
-    syncReminders(habits, settings, doneToday);
-  }, [habitsLoaded, habits, settings.notificationsEnabled, settings.notifyMinutesBefore]);
+    syncReminders(habits, settings, doneToday, overrides);
+  }, [habitsLoaded, habits, overrides, settings.notificationsEnabled, settings.notifyMinutesBefore]);
+
+  // Habit edits move their calendar events and change conflicts
+  const firstHabits = React.useRef(true);
+  useEffect(() => {
+    if (!habitsLoaded) return;
+    if (firstHabits.current) { firstHabits.current = false; return; } // reloadAll already refreshed
+    useScheduleStore.getState().refresh();
+  }, [habits]);
 }

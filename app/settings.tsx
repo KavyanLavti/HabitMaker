@@ -11,6 +11,7 @@ import { SystemPanel, SystemButton, ScreenHeader, Body, sharedStyles } from '@/c
 import { useSettingsStore, Settings } from '@/store/settingsStore';
 import { reloadAll } from '@/lib/reload';
 import { TestModePanel } from '@/components/TestModePanel';
+import { CalendarPanel } from '@/components/CalendarPanel';
 import { buildBackupJson, restoreFromBackup } from '@/lib/dataExport';
 import {
   backupNow, fetchLatestBackup, getBackupStatus, getBackupToken, setBackupToken, BackupStatus, BACKUP_HOUR,
@@ -184,6 +185,8 @@ export default function SettingsScreen() {
           <Text style={sharedStyles.inputLabel}>NAME</Text>
           <TextInput style={sharedStyles.input} value={settings.displayName} onChangeText={(t) => up('displayName', t)} />
         </SystemPanel>
+
+        <CalendarPanel />
 
         <SystemPanel title="QUEST ALERTS">
           {(!perm.notif || !perm.exact) && (

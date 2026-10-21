@@ -19,6 +19,7 @@ const TYPES: { key: ScheduleType; label: string; hint: string }[] = [
   { key: 'fixed', label: 'FIXED TIME', hint: 'Alert at an exact time every day.' },
   { key: 'window', label: 'TIME WINDOW', hint: 'Alert when the window opens. Do it any time before it closes.' },
   { key: 'anytime', label: 'ANY TIME', hint: 'No alert. Just needs to be done today.' },
+  { key: 'avoid', label: 'AVOID', hint: "Something you don't do, like smoking. No time slot. Check in each evening that you stayed clean; no check-in counts as a miss." },
 ];
 
 function TimeField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
@@ -73,7 +74,7 @@ export function AddHabitModal({ visible, initial, onSave, onClose }: Props) {
 
   const save = () => {
     if (!name.trim()) return setError('Give the quest a name.');
-    if (type !== 'anytime' && !time) return setError(type === 'window' ? 'Set when the window opens.' : 'Set a time.');
+    if ((type === 'fixed' || type === 'window') && !time) return setError(type === 'window' ? 'Set when the window opens.' : 'Set a time.');
     if (type === 'window') {
       if (!windowEnd) return setError('Set when the window closes.');
       if ((parseHHMM(windowEnd) ?? 0) <= (parseHHMM(time) ?? 0)) return setError('The window must close after it opens.');
@@ -82,9 +83,9 @@ export function AddHabitModal({ visible, initial, onSave, onClose }: Props) {
       name: name.trim(),
       urgencyLevel: urgency,
       pointsPerCompletion: Number(points) || 10,
-      dailyDurationMinutes: Number(duration) || 30,
+      dailyDurationMinutes: type === 'avoid' ? 0 : Number(duration) || 30,
       scheduleType: type,
-      scheduledTime: type === 'anytime' ? null : time,
+      scheduledTime: type === 'anytime' ? null : time || null,
       windowEnd: type === 'window' ? windowEnd : null,
       totalDays: hasGoal ? Number(totalDays) || null : null,
       isDaily: !hasGoal,
@@ -123,7 +124,7 @@ export function AddHabitModal({ visible, initial, onSave, onClose }: Props) {
 
             {type !== 'anytime' && (
               <View style={styles.row}>
-                <TimeField label={type === 'window' ? 'OPENS' : 'TIME'} value={time} onChange={(v) => { setTime(v); setError(null); }} />
+                <TimeField label={type === 'window' ? 'OPENS' : type === 'avoid' ? 'CHECK-IN REMINDER (OPTIONAL)' : 'TIME'} value={time} onChange={(v) => { setTime(v); setError(null); }} />
                 {type === 'window' && (
                   <TimeField label="CLOSES" value={windowEnd} onChange={(v) => { setWindowEnd(v); setError(null); }} />
                 )}
@@ -131,11 +132,11 @@ export function AddHabitModal({ visible, initial, onSave, onClose }: Props) {
             )}
 
             <View style={styles.row}>
-              <View style={{ flex: 1 }}>
+              {type !== 'avoid' && <View style={{ flex: 1 }}>
                 <Text style={sharedStyles.inputLabel}>DURATION (MIN)</Text>
                 <TextInput style={sharedStyles.input} value={duration} onChangeText={setDuration}
                   keyboardType="numeric" placeholder="30" placeholderTextColor={Colors.textMuted} />
-              </View>
+              </View>}
               <View style={{ flex: 1 }}>
                 <Text style={sharedStyles.inputLabel}>POINTS</Text>
                 <TextInput style={sharedStyles.input} value={points} onChangeText={setPoints}
@@ -196,7 +197,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   segBtnOn: { backgroundColor: Colors.system, borderColor: Colors.system },
-  segText: { fontFamily: Fonts.displaySemi, fontSize: 10, letterSpacing: 1, color: Colors.textSecondary },
+  segText: { fontFamily: Fonts.displaySemi, fontSize: 9, letterSpacing: 0.5, color: Colors.textSecondary, textAlign: 'center' },
   hint: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted, marginTop: 6 },
   timeBtn: { justifyContent: 'center' },
   timeText: { fontFamily: Fonts.display, fontSize: 18, color: Colors.system, letterSpacing: 2 },

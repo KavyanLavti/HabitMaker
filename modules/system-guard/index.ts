@@ -12,6 +12,8 @@ export interface ReminderSpec {
   body: string;
   /** Minutes after midnight, local time. */
   minutes: number;
+  /** One-day changes: "YYYY-MM-DD" → minutes after midnight (-1 = no alert that day). */
+  overrides?: Record<string, number>;
 }
 
 export interface GateDebug {

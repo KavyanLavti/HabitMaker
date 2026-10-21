@@ -4,21 +4,43 @@ import { Colors, Fonts, Space } from '@/constants/theme';
 import { SystemPanel, SystemButton, Body } from '@/components/ui/System';
 import { Habit } from '@/store/habitStore';
 
-/** Shown when the reminder itself is tapped: the same two choices as its buttons, nothing else. */
-export function QuestPrompt({ habit, onStart, onSnooze }: { habit: Habit | null; onStart: () => void; onSnooze: () => void }) {
+/**
+ * Shown when the reminder itself is tapped: the same choices as its buttons, nothing else.
+ * Avoid habits get the evening check-in instead: stayed clean, or slipped.
+ */
+export function QuestPrompt({ habit, onStart, onSnooze, onSlip }: {
+  habit: Habit | null;
+  onStart: () => void;
+  onSnooze: () => void;
+  /** Avoid habits only: dismisses the check-in without credit for today. */
+  onSlip?: () => void;
+}) {
   if (!habit) return null;
+  const avoid = habit.scheduleType === 'avoid';
   return (
     <Modal visible transparent animationType="fade" onRequestClose={() => {}}>
       <View style={styles.overlay}>
-        <SystemPanel title="NOTIFICATION" glowing>
-          <Text style={styles.kicker}>[DAILY QUEST HAS ARRIVED]</Text>
+        <SystemPanel title="NOTIFICATION" glowing tone={avoid ? 'shadow' : 'system'}>
+          <Text style={[styles.kicker, avoid && { color: Colors.shadow }]}>
+            {avoid ? '[EVENING CHECK-IN]' : '[DAILY QUEST HAS ARRIVED]'}
+          </Text>
           <Text style={styles.name}>{habit.name}</Text>
           <Body muted style={{ textAlign: 'center' }}>
-            {habit.dailyDurationMinutes} minutes · +{habit.pointsPerCompletion} points
+            {avoid ? 'Did you stay clean today?' : `${habit.dailyDurationMinutes} minutes`} · +{habit.pointsPerCompletion} points
           </Body>
           <Body style={styles.warning}>Failure to act will not make this alert go away.</Body>
-          <SystemButton label="▶  START QUEST" onPress={onStart} />
-          <SystemButton label="SNOOZE" onPress={onSnooze} variant="outline" style={{ marginTop: Space.sm }} />
+          {avoid ? (
+            <>
+              <SystemButton label="✓  I STAYED CLEAN" tone="shadow" onPress={onStart} />
+              <SystemButton label="I SLIPPED" tone="danger" variant="outline" onPress={onSlip ?? onSnooze} style={{ marginTop: Space.sm }} />
+              <SystemButton label="ASK ME LATER" variant="ghost" onPress={onSnooze} style={{ marginTop: Space.sm }} />
+            </>
+          ) : (
+            <>
+              <SystemButton label="▶  START QUEST" onPress={onStart} />
+              <SystemButton label="SNOOZE" onPress={onSnooze} variant="outline" style={{ marginTop: Space.sm }} />
+            </>
+          )}
         </SystemPanel>
       </View>
     </Modal>

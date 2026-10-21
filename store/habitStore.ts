@@ -4,7 +4,11 @@ import { dateKeyOf, todayKey, daysBetweenKeys } from '@/lib/dates';
 import { computeStreak, StreakState } from '@/lib/streaks';
 import { nowIso } from '@/lib/clock';
 
-export type ScheduleType = 'fixed' | 'window' | 'anytime';
+/**
+ * fixed: at a set time · window: any time inside a range · anytime: no time
+ * avoid: something you DON'T do (e.g. smoking). No slot or timer; you check in each evening that you stayed clean.
+ */
+export type ScheduleType = 'fixed' | 'window' | 'anytime' | 'avoid';
 
 export interface Habit {
   id: string;
@@ -13,7 +17,7 @@ export interface Habit {
   pointsPerCompletion: number;
   dailyDurationMinutes: number;
   scheduleType: ScheduleType;
-  /** Fixed time, or window start, as "HH:MM". Null for any-time habits. */
+  /** Fixed time or window start, "HH:MM". For avoid habits: optional evening check-in reminder time. */
   scheduledTime: string | null;
   /** Window end "HH:MM", only for window habits. */
   windowEnd: string | null;

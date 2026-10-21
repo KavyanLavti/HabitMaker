@@ -7,7 +7,7 @@
     "android": "expo start --android",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "tsx lib/__tests__/streaks.test.ts && tsx lib/__tests__/gate.test.ts && tsx lib/__tests__/dates.test.ts",
+    "test": "tsx lib/__tests__/streaks.test.ts && tsx lib/__tests__/gate.test.ts && tsx lib/__tests__/dates.test.ts && tsx lib/__tests__/gym.test.ts && tsx lib/__tests__/scheduling.test.ts",
     "build:apk": "eas build --platform android --profile preview"
   },
   "dependencies": {
@@ -18,6 +18,7 @@
     "@react-native-community/datetimepicker": "9.1.0",
     "expo": "~57.0.30",
     "expo-background-task": "~57.0.21",
+    "expo-calendar": "~57.0.5",
     "expo-constants": "~57.0.22",
     "expo-font": "~57.0.4",
     "expo-haptics": "~57.0.3",

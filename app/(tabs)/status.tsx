@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { Colors, Fonts, Space, rankFor, glow } from '@/constants/theme';
 import { SystemPanel, ScreenHeader, SectionLabel, Bar, Stat, Body, sharedStyles } from '@/components/ui/System';
 import { RankEmblem } from '@/components/aura/RankEmblem';
+import { GymAnalytics } from '@/components/gym/GymAnalytics';
 import { useHabitStore } from '@/store/habitStore';
 import { usePointStore } from '@/store/pointStore';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -43,9 +44,14 @@ export default function StatusTab() {
         kicker="PLAYER"
         title="STATUS"
         right={
-          <TouchableOpacity onPress={() => router.push('/settings')} style={{ padding: 6 }}>
-            <Ionicons name="settings-outline" size={24} color={Colors.textSecondary} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row' }}>
+            <TouchableOpacity onPress={() => router.push('/gym')} style={{ padding: 6 }}>
+              <Ionicons name="barbell-outline" size={24} color={Colors.ember} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/settings')} style={{ padding: 6 }}>
+              <Ionicons name="settings-outline" size={24} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
         }
       />
       <ScrollView contentContainerStyle={{ padding: Space.lg, paddingTop: 0, paddingBottom: 40 }}>
@@ -69,6 +75,17 @@ export default function StatusTab() {
             <Stat label="FREEZES" value={totalFreezes} color={Colors.frost} />
           </View>
         </SystemPanel>
+
+        <TouchableOpacity onPress={() => router.push('/gym')} activeOpacity={0.85}>
+          <SystemPanel tone="ember" style={styles.gymLink}>
+            <Ionicons name="barbell" size={22} color={Colors.ember} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.gymTitle}>GYM MANAGEMENT</Text>
+              <Text style={styles.gymSub}>Log exercises, sets, reps and weight</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={Colors.ember} />
+          </SystemPanel>
+        </TouchableOpacity>
 
         <SectionLabel>POINTS · LAST 14 DAYS</SectionLabel>
         <SystemPanel>
@@ -144,12 +161,16 @@ export default function StatusTab() {
             ))}
           </>
         )}
+        <GymAnalytics onOpenLog={() => router.push('/gym')} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  gymLink: { flexDirection: 'row', alignItems: 'center', gap: Space.md },
+  gymTitle: { fontFamily: Fonts.display, fontSize: 14, letterSpacing: 2, color: Colors.textPrimary },
+  gymSub: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted, marginTop: 2 },
   profile: { flexDirection: 'row', alignItems: 'center', gap: Space.lg, marginBottom: Space.lg },
   name: { fontFamily: Fonts.display, fontSize: 22, letterSpacing: 2, color: Colors.textPrimary },
   title: { fontFamily: Fonts.displaySemi, fontSize: 11, letterSpacing: 1.5, marginTop: 2 },

@@ -11,6 +11,7 @@ import { dateKeyOf, daysBetweenKeys, todayKey } from '@/lib/dates';
 function scheduleLabel(h: Habit) {
   if (h.scheduleType === 'window') return `${h.scheduledTime}–${h.windowEnd}`;
   if (h.scheduleType === 'fixed') return h.scheduledTime ?? '';
+  if (h.scheduleType === 'avoid') return h.scheduledTime ? `AVOID · CHECK-IN ${h.scheduledTime}` : 'AVOID';
   return 'ANY TIME';
 }
 
@@ -65,7 +66,7 @@ export default function QuestsTab() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.name}>{h.name}</Text>
                   <Text style={styles.meta}>
-                    {scheduleLabel(h)} · {h.dailyDurationMinutes}M · +{h.pointsPerCompletion} PTS
+                    {scheduleLabel(h)}{h.scheduleType === 'avoid' ? '' : ` · ${h.dailyDurationMinutes}M`} · +{h.pointsPerCompletion} PTS
                     {h.totalDays ? ` · ${h.totalDays}D GOAL` : ''}
                   </Text>
                   <Text style={styles.meta}>🔥 {s.streak}   ❄ {s.freezes}</Text>
