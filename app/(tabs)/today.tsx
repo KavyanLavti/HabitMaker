@@ -12,7 +12,8 @@ import { QuestCard, questTiming } from '@/components/habits/QuestCard';
 import { HabitTimer, loadTimerSession, clearTimerSession, remainingSec } from '@/components/habits/HabitTimer';
 import { SnoozeSheet } from '@/components/habits/SnoozeSheet';
 import { QuestPrompt } from '@/components/habits/QuestPrompt';
-import { useHabitStore, Habit } from '@/store/habitStore';
+import { TodoList } from '@/components/todo/TodoList';
+import { useHabitStore, Habit, isHabitActive } from '@/store/habitStore';
 import { usePointStore } from '@/store/pointStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useSnoozeStore } from '@/store/snoozeStore';
@@ -28,7 +29,8 @@ type DeepLink = { start?: string; snooze?: string; quest?: string; timer?: strin
 export default function TodayTab() {
   const params = useLocalSearchParams<DeepLink>();
   const router = useRouter();
-  const habits = useHabitStore((s) => s.habits);
+  const allHabits = useHabitStore((s) => s.habits);
+  const slips = useHabitStore((s) => s.slips);
   const completions = useHabitStore((s) => s.completions);
   const loaded = useHabitStore((s) => s.loaded);
   const getStreakState = useHabitStore((s) => s.getStreakState);
@@ -47,6 +49,10 @@ export default function TodayTab() {
 
   const today = todayKey();
   const dayInfo = describeKey(today);
+  // Quests not scheduled for today's weekday rest and stay off the list
+  const habits = useMemo(() => allHabits.filter((h) => isHabitActive(h, today)), [allHabits, today]);
+  const restingCount = allHabits.length - habits.length;
+  const isSlipped = (id: string) => slips.has(`${id}|${today}`);
   const testMode = useTestMode((s) => s.enabled);
   useTestMode((s) => s.offsetMs); // re-render when simulated time moves
   const level = Math.floor(lifetime / settings.pointsPerLevel) + 1;
@@ -64,13 +70,14 @@ export default function TodayTab() {
   // Open quests first (urgent → by time), avoid check-ins after timed ones, cleared last
   const sorted = useMemo(() => {
     const order = (h: Habit) => {
+      if (isSlipped(h.id)) return 5;
       if (isDone(h.id)) return 4;
       if (questTiming(h, false, movedTo(h.id)).urgent) return 0;
       return h.scheduleType === 'avoid' ? 3 : h.scheduleType === 'anytime' ? 2 : 1;
     };
     const time = (h: Habit) => parseHHMM(movedTo(h.id) ?? h.scheduledTime) ?? 9999;
     return [...habits].sort((a, b) => order(a) - order(b) || time(a) - time(b));
-  }, [habits, completedByHabit, overrides]);
+  }, [habits, completedByHabit, overrides, slips]);
 
   const clearedCount = habits.filter((h) => isDone(h.id)).length;
   const allClear = habits.length > 0 && clearedCount === habits.length;
@@ -84,6 +91,7 @@ export default function TodayTab() {
   /** Start for timed quests opens the timer; for avoid habits it opens the evening check-in. */
   const begin = (h: Habit, autoStart: boolean) => {
     if (h.scheduleType === 'avoid') {
+      if (isSlipped(h.id)) return; // today's answer is locked in
       setPromptHabit(h);
       return;
     }
@@ -94,7 +102,7 @@ export default function TodayTab() {
   // Notification buttons arrive as deep links: habitforge://today?start=<id> etc.
   useEffect(() => {
     if (!loaded) return;
-    const find = (id?: string) => (id ? habits.find((h) => h.id === id) : undefined);
+    const find = (id?: string) => (id ? allHabits.find((h) => h.id === id) : undefined);
     let handled = false;
     if (find(params.start)) {
       begin(find(params.start)!, true);
@@ -103,7 +111,7 @@ export default function TodayTab() {
       setSnoozeHabit(find(params.snooze)!);
       handled = true;
     } else if (find(params.quest)) {
-      if (!isDone(params.quest!)) setPromptHabit(find(params.quest)!);
+      if (!isDone(params.quest!) && !isSlipped(params.quest!)) setPromptHabit(find(params.quest)!);
       handled = true;
     } else if (find(params.timer)) {
       setTimer({ habit: find(params.timer)!, autoStart: false });
@@ -207,6 +215,7 @@ export default function TodayTab() {
                 streak={getStreakState(habit.id)}
                 completionCount={getCompletionCount(habit.id)}
                 done={done}
+                slipped={isSlipped(habit.id)}
                 snoozedTo={snoozes.date === today ? snoozes.until[habit.id] : null}
                 movedTo={movedTo(habit.id)}
                 conflict={todayClash.has(habit.id)}
@@ -217,6 +226,13 @@ export default function TodayTab() {
             </Animated.View>
           );
         })}
+        <Animated.View entering={FadeInDown.delay(220)} style={{ marginTop: Space.lg }}>
+          <TodoList />
+        </Animated.View>
+
+        {restingCount > 0 && (
+          <Text style={styles.hint}>{restingCount} quest{restingCount > 1 ? 's' : ''} resting today (not scheduled for {dayInfo.day.toLowerCase()}).</Text>
+        )}
         {sorted.some((h) => h.scheduleType === 'fixed' || h.scheduleType === 'window') && (
           <Text style={styles.hint}>Long-press a quest to move it for one day.</Text>
         )}
@@ -240,7 +256,7 @@ export default function TodayTab() {
             const h = promptHabit!;
             setPromptHabit(null);
             if (h.scheduleType === 'avoid') {
-              if (!isDone(h.id)) await completeQuest(h, 0, false);
+              if (!isDone(h.id) && !isSlipped(h.id)) await completeQuest(h, 0, false);
               return;
             }
             SystemGuard.markHandled(h.id);

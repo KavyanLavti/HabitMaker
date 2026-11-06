@@ -1,6 +1,6 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import { SystemGuard, ReminderSpec } from '@/modules/system-guard';
-import { parseHHMM } from '@/lib/dates';
+import { parseHHMM, addDaysKey, todayKey, isActiveOn } from '@/lib/dates';
 import type { Habit } from '@/store/habitStore';
 import type { Settings } from '@/store/settingsStore';
 
@@ -48,8 +48,15 @@ export function syncReminders(
         if (minutes == null) return [];
         const lead = h.scheduleType === 'fixed' ? settings.notifyMinutesBefore : 0;
         const overrides: Record<string, number> = {};
+        // Rest days: no alert. The native scheduler looks up to 30 days ahead, and this re-syncs on every app open.
+        const today = todayKey();
+        for (let i = 0; i <= 31; i++) {
+          const d = addDaysKey(today, i);
+          if (!isActiveOn(h.activeDays, d)) overrides[d] = -1;
+        }
         for (const [date, t] of Object.entries(dayOverrides[h.id] ?? {})) {
           const m = parseHHMM(t);
+          if (overrides[date] === -1) continue; // a moved time can't revive a rest day
           overrides[date] = m == null ? -1 : Math.max(0, m - lead);
         }
         return [{ id: h.id, title: h.name, body: body(h), minutes, overrides }];

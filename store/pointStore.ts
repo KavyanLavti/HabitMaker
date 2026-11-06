@@ -6,7 +6,7 @@ import { dateKey, dateKeyOf } from '@/lib/dates';
 export interface LedgerEntry {
   id: string;
   habitId: string | null;
-  type: 'earn' | 'bonus' | 'penalty' | 'reward_claim' | 'combo' | 'screen_time';
+  type: 'earn' | 'bonus' | 'penalty' | 'reward_claim' | 'combo' | 'screen_time' | 'todo';
   amount: number;
   reason: string;
   createdAt: string;
@@ -21,7 +21,9 @@ interface PointStore {
   loaded: boolean;
   loadPoints: () => Promise<void>;
   /** `at` backdates the entry, e.g. for a timer session finished on a previous day. */
-  addEntry: (entry: Omit<LedgerEntry, 'id' | 'createdAt' | 'date'>, at?: Date) => Promise<void>;
+  addEntry: (entry: Omit<LedgerEntry, 'id' | 'createdAt' | 'date'>, at?: Date) => Promise<LedgerEntry>;
+  /** Deletes an entry (e.g. a to-do unchecked) and undoes its effect on the totals. */
+  removeEntry: (id: string) => Promise<void>;
   getLevel: (pointsPerLevel: number) => number;
   getLevelProgress: (pointsPerLevel: number) => number;
 }
@@ -50,6 +52,18 @@ export const usePointStore = create<PointStore>((set, get) => ({
       ledger: [entry, ...s.ledger],
       spendablePoints: Math.max(0, s.spendablePoints + entry.amount),
       lifetimePoints: entry.amount > 0 ? s.lifetimePoints + entry.amount : s.lifetimePoints,
+    }));
+    return entry;
+  },
+
+  removeEntry: async (id) => {
+    const entry = get().ledger.find((e) => e.id === id);
+    await runMutation('DELETE FROM point_ledger WHERE id=?', [id]);
+    if (!entry) return;
+    set((s) => ({
+      ledger: s.ledger.filter((e) => e.id !== id),
+      spendablePoints: Math.max(0, s.spendablePoints - entry.amount),
+      lifetimePoints: entry.amount > 0 ? s.lifetimePoints - entry.amount : s.lifetimePoints,
     }));
   },
 

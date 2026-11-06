@@ -28,13 +28,16 @@ export function isPerfectDay(habitIds: string[], completedTodayIds: string[]): b
 
 /** Perfect days in a row ending today (or yesterday, if today isn't perfect yet). */
 export function getConsecutivePerfectDays(
-  habitIds: string[],
+  /** Habits scheduled on a given day (rest days excluded). */
+  habitIdsFor: (day: string) => string[],
   completionsByDate: Record<string, string[]>,
   dayKeys: string[] // most recent first, starting with today
 ): number {
   let count = 0;
   for (let i = 0; i < dayKeys.length; i++) {
-    if (isPerfectDay(habitIds, completionsByDate[dayKeys[i]] ?? [])) count++;
+    const ids = habitIdsFor(dayKeys[i]);
+    if (!ids.length && i > 0) continue; // nothing scheduled: neither breaks nor extends the run
+    if (isPerfectDay(ids, completionsByDate[dayKeys[i]] ?? [])) count++;
     else if (i === 0) continue; // today still in progress
     else break;
   }

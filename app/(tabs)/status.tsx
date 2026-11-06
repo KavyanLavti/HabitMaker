@@ -7,6 +7,7 @@ import { Colors, Fonts, Space, rankFor, glow } from '@/constants/theme';
 import { SystemPanel, ScreenHeader, SectionLabel, Bar, Stat, Body, sharedStyles } from '@/components/ui/System';
 import { RankEmblem } from '@/components/aura/RankEmblem';
 import { GymAnalytics } from '@/components/gym/GymAnalytics';
+import { TodoAnalytics } from '@/components/todo/TodoAnalytics';
 import { useHabitStore } from '@/store/habitStore';
 import { usePointStore } from '@/store/pointStore';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -24,7 +25,7 @@ export default function StatusTab() {
 
   const daily = useMemo(() => getDailyPointTotals(ledger, 14), [ledger]);
   const maxDaily = Math.max(1, ...daily.map((d) => d.points));
-  const heat = useMemo(() => getHeatmap(completions, 84), [completions]);
+  const heat = useMemo(() => getHeatmap(completions, 12), [completions]);
 
   const streaks = habits.map((h) => ({ h, s: getStreakState(h.id) }));
   const bestStreak = Math.max(0, ...streaks.map((x) => x.s.streak));
@@ -32,7 +33,7 @@ export default function StatusTab() {
 
   const insights = useMemo(
     () => habits.flatMap((h) => {
-      const t = getMissPatternInsight(h.name, completions.filter((c) => c.habitId === h.id), h.createdAt);
+      const t = getMissPatternInsight(h.name, completions.filter((c) => c.habitId === h.id), h.createdAt, h.activeDays);
       return t ? [t] : [];
     }),
     [habits, completions]
@@ -111,6 +112,12 @@ export default function StatusTab() {
         <SectionLabel>ACTIVITY · 12 WEEKS</SectionLabel>
         <SystemPanel>
           <View style={styles.heat}>
+            {/* Rows are weekdays, columns are Monday-to-Sunday weeks */}
+            <View style={styles.heatCol}>
+              {['M', '', 'W', '', 'F', '', 'S'].map((l, i) => (
+                <Text key={i} style={styles.heatDay}>{l}</Text>
+              ))}
+            </View>
             {Array.from({ length: 12 }, (_, w) => (
               <View key={w} style={styles.heatCol}>
                 {heat.slice(w * 7, w * 7 + 7).map((d) => (
@@ -120,7 +127,8 @@ export default function StatusTab() {
                       styles.heatCell,
                       {
                         backgroundColor:
-                          d.count === 0 ? Colors.surfaceHigh
+                          d.count < 0 ? 'transparent'
+                          : d.count === 0 ? Colors.surfaceHigh
                           : d.count === 1 ? Colors.systemDim
                           : d.count <= 3 ? Colors.system
                           : Colors.systemGlow,
@@ -138,7 +146,7 @@ export default function StatusTab() {
             <SectionLabel>CONSISTENCY</SectionLabel>
             <SystemPanel>
               {streaks.map(({ h }) => {
-                const score = getConsistencyScore(completions.filter((c) => c.habitId === h.id), h.createdAt);
+                const score = getConsistencyScore(completions.filter((c) => c.habitId === h.id), h.createdAt, h.activeDays);
                 return (
                   <View key={h.id} style={styles.consRow}>
                     <Text style={styles.consName} numberOfLines={1}>{h.name}</Text>
@@ -161,6 +169,7 @@ export default function StatusTab() {
             ))}
           </>
         )}
+        <TodoAnalytics />
         <GymAnalytics onOpenLog={() => router.push('/gym')} />
       </ScrollView>
     </SafeAreaView>
@@ -185,6 +194,7 @@ const styles = StyleSheet.create({
   heat: { flexDirection: 'row', gap: 4, justifyContent: 'center' },
   heatCol: { gap: 4 },
   heatCell: { width: 16, height: 16, borderRadius: 2 },
+  heatDay: { width: 12, height: 16, fontFamily: Fonts.displaySemi, fontSize: 9, lineHeight: 16, color: Colors.textMuted },
   consRow: { flexDirection: 'row', alignItems: 'center', gap: Space.sm, marginBottom: Space.sm },
   consName: { fontFamily: Fonts.body, fontSize: 13, color: Colors.textPrimary, width: 110 },
   consPct: { fontFamily: Fonts.display, fontSize: 12, color: Colors.system, width: 40, textAlign: 'right' },

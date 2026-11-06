@@ -1,7 +1,7 @@
 /// <reference types="node" />
 // Run: npx tsx lib/__tests__/gym.test.ts
 import assert from 'node:assert/strict';
-import { estimate1RM, prSetIds, exerciseStats, weeklyVolume, workoutDays, SetRow } from '../gymAnalytics';
+import { estimate1RM, prSetIds, exerciseStats, weeklyVolume, workoutDaysThisWeek, workoutDaysThisMonth, SetRow } from '../gymAnalytics';
 
 const set = (id: string, date: string, ex: string, i: number, reps: number, kg: number): SetRow =>
   ({ id, date, exerciseId: ex, setIndex: i, reps, weightKg: kg });
@@ -27,10 +27,15 @@ assert.equal(bench.totalVolume, 480 + 480 + 350 + 550);
 assert.equal(bench.lastDate, '2026-10-09');
 assert.equal(bench.sessions[0].sets, 2);
 
+// Calendar weeks: 2026-10-10 is a Saturday, so "this week" is Mon 10-05 .. Sun 10-11
 const wv = weeklyVolume(sets, '2026-10-10', 2);
-assert.equal(wv[1].volume, 350 + 500 + 550); // 10-04..10-10
-assert.equal(wv[0].volume, 960); // 09-27..10-03
+assert.deepEqual([wv[1].start, wv[1].end], ['2026-10-05', '2026-10-11']);
+assert.equal(wv[1].volume, 350 + 500 + 550);
+assert.deepEqual([wv[0].start, wv[0].end], ['2026-09-28', '2026-10-04']);
+assert.equal(wv[0].volume, 960); // 10-01 falls in the previous Monday-week
 
-assert.equal(workoutDays(sets, '2026-10-10', 7), 2);
+assert.equal(workoutDaysThisWeek(sets, '2026-10-10'), 2); // 10-05 and 10-09
+assert.equal(workoutDaysThisWeek(sets, '2026-10-04'), 1); // Sunday: week began Mon 09-28
+assert.equal(workoutDaysThisMonth(sets, '2026-10-10'), 3);
 
 console.log('gym: all passed');

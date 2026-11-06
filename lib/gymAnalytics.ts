@@ -1,5 +1,5 @@
 // Pure gym maths: estimated 1-rep max, volume, PRs and trends. No React/storage imports (unit tested).
-import { addDaysKey } from './dates';
+import { addDaysKey, weekStartKey } from './dates';
 
 export interface SetRow {
   id: string;
@@ -73,21 +73,30 @@ export function exerciseStats(sets: SetRow[], exerciseId: string): ExerciseStats
   };
 }
 
-/** Total kg lifted per 7-day block ending today, oldest first. */
-export function weeklyVolume(sets: SetRow[], today: string, weeks = 8): { start: string; volume: number }[] {
+/**
+ * Total kg lifted per calendar week (Monday → Sunday), oldest first. The last entry is the current week
+ * so far.
+ */
+export function weeklyVolume(sets: SetRow[], today: string, weeks = 8): { start: string; end: string; volume: number }[] {
+  const thisWeek = weekStartKey(today);
   return Array.from({ length: weeks }, (_, i) => {
-    const end = addDaysKey(today, -(weeks - 1 - i) * 7);
-    const start = addDaysKey(end, -6);
+    const start = addDaysKey(thisWeek, -(weeks - 1 - i) * 7);
+    const end = addDaysKey(start, 6);
     const volume = sets.filter((s) => s.date >= start && s.date <= end).reduce((n, s) => n + setVolume(s), 0);
-    return { start, volume };
+    return { start, end, volume };
   });
 }
 
-/** Distinct days with at least one set in the `days` days ending today. */
-export function workoutDays(sets: SetRow[], today: string, days: number): number {
-  const from = addDaysKey(today, -(days - 1));
-  return new Set(sets.filter((s) => s.date >= from && s.date <= today).map((s) => s.date)).size;
+/** Distinct days with at least one set between `from` and `to` (inclusive). */
+export function workoutDaysBetween(sets: SetRow[], from: string, to: string): number {
+  return new Set(sets.filter((s) => s.date >= from && s.date <= to).map((s) => s.date)).size;
 }
+
+/** Workout days in the current calendar week (since Monday). */
+export const workoutDaysThisWeek = (sets: SetRow[], today: string) => workoutDaysBetween(sets, weekStartKey(today), today);
+
+/** Workout days in the current calendar month. */
+export const workoutDaysThisMonth = (sets: SetRow[], today: string) => workoutDaysBetween(sets, today.slice(0, 8) + '01', today);
 
 /** Exercise ids ordered by how recently they were used (most recent first), then by name order given. */
 export function recentExerciseOrder(sets: SetRow[]): string[] {

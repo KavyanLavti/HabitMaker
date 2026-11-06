@@ -9,7 +9,7 @@ import { Colors, Fonts, Space, URGENCY, glow } from '@/constants/theme';
 import { SystemPanel } from '@/components/ui/System';
 import { Habit } from '@/store/habitStore';
 import { StreakState, MAX_FREEZES } from '@/lib/streaks';
-import { addDaysKey, minutesNow, parseHHMM, todayKey } from '@/lib/dates';
+import { addDaysKey, minutesNow, parseHHMM, todayKey, isActiveOn, describeDays } from '@/lib/dates';
 
 export type QuestTiming = { label: string; color: string; urgent: boolean };
 
@@ -48,6 +48,8 @@ interface Props {
   streak: StreakState;
   completionCount: number;
   done: boolean;
+  /** Avoid habit answered "I slipped" today: locked, no check-in. */
+  slipped?: boolean;
   snoozedTo?: string | null;
   movedTo?: string | null;
   /** Today has a calendar clash; tapping the badge opens the rescheduler. */
@@ -58,9 +60,11 @@ interface Props {
 }
 
 export function QuestCard({
-  habit, completedKeys, streak, completionCount, done, snoozedTo, movedTo, conflict, onConflict, onStart, onLongPress,
+  habit, completedKeys, streak, completionCount, done, slipped, snoozedTo, movedTo, conflict, onConflict, onStart, onLongPress,
 }: Props) {
-  const timing: QuestTiming = !done && snoozedTo
+  const timing: QuestTiming = slipped
+    ? { label: 'SLIPPED TODAY · TOMORROW IS NEW', color: Colors.danger, urgent: false }
+    : !done && snoozedTo
     ? { label: `SNOOZED → ${snoozedTo}`, color: Colors.shadow, urgent: false }
     : questTiming(habit, done, movedTo);
 
@@ -86,7 +90,7 @@ export function QuestCard({
     <SystemPanel
       tone={timing.urgent ? (timing.color === Colors.ember ? 'ember' : 'system') : 'system'}
       glowing={timing.urgent}
-      dim={done}
+      dim={done || slipped}
       style={styles.panel}
     >
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.flash, flashStyle]} />
@@ -111,10 +115,15 @@ export function QuestCard({
             <Text style={styles.meta}>
               {habit.scheduleType === 'avoid' ? 'AVOID' : `${habit.dailyDurationMinutes} MIN`} · +{habit.pointsPerCompletion} PTS
               {habit.totalDays ? ` · ${completionCount}/${habit.totalDays} DAYS` : ''}
+              {habit.activeDays !== 127 ? ` · ${describeDays(habit.activeDays)}` : ''}
             </Text>
           </View>
 
-          {done ? (
+          {slipped ? (
+            <View style={styles.slipped}>
+              <Ionicons name="close" size={20} color={Colors.danger} />
+            </View>
+          ) : done ? (
             <Animated.View entering={ZoomIn.springify().damping(9)} style={[styles.check, glow(Colors.success)]}>
               <Ionicons name="checkmark" size={20} color={Colors.background} />
             </Animated.View>
@@ -136,6 +145,7 @@ export function QuestCard({
               const k = addDaysKey(today, i - 6);
               const isDone = completedKeys.has(k);
               const isFrozen = frozen.has(k);
+              const rest = !isActiveOn(habit.activeDays, k) && !isDone;
               return (
                 <View
                   key={k}
@@ -144,6 +154,7 @@ export function QuestCard({
                     isDone && { backgroundColor: Colors.system, ...glow(Colors.system) },
                     isFrozen && { backgroundColor: Colors.frost },
                     k === today && !isDone && { borderColor: Colors.system, borderWidth: 1 },
+                    rest && styles.restDot,
                   ]}
                 />
               );
@@ -193,6 +204,10 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   startText: { fontFamily: Fonts.display, fontSize: 12, letterSpacing: 1.5, color: Colors.background },
+  slipped: {
+    width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: Colors.danger,
+    alignItems: 'center', justifyContent: 'center',
+  },
   check: {
     width: 36,
     height: 36,
@@ -211,6 +226,7 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.border,
   },
   week: { flexDirection: 'row', gap: 5 },
+  restDot: { backgroundColor: 'transparent', borderWidth: 1, borderColor: Colors.border, transform: [{ scale: 0.6 }] },
   dot: { width: 10, height: 10, borderRadius: 2, backgroundColor: Colors.surfaceHigh },
   badges: { flexDirection: 'row', alignItems: 'center', gap: Space.md },
   streak: { fontFamily: Fonts.display, fontSize: 13 },

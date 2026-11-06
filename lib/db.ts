@@ -168,7 +168,30 @@ async function initSchema(db: SQLite.SQLiteDatabase) {
     );
     CREATE INDEX IF NOT EXISTS idx_sets_date ON workout_sets(date);
     CREATE INDEX IF NOT EXISTS idx_sets_exercise ON workout_sets(exerciseId, date);
+
+    -- v2.3: an avoid habit answered "I slipped" for a day (locks that day's check-in)
+    CREATE TABLE IF NOT EXISTS habit_slips (
+      habitId TEXT NOT NULL,
+      date TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      PRIMARY KEY (habitId, date)
+    );
+
+    -- Daily to-do list. ledgerId links the points entry so unchecking takes the points back.
+    CREATE TABLE IF NOT EXISTS todos (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      title TEXT NOT NULL,
+      points INTEGER NOT NULL,
+      done INTEGER NOT NULL DEFAULT 0,
+      doneAt TEXT,
+      ledgerId TEXT,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_todos_date ON todos(date);
   `);
+  // v2.3: weekdays a habit is active on, as a bitmask (bit 0 = Sunday … bit 6 = Saturday); 127 = every day
+  try { await db.execAsync('ALTER TABLE habits ADD COLUMN activeDays INTEGER NOT NULL DEFAULT 127'); } catch {}
 
   // Seed default data on first launch
   const seeded = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_meta WHERE key='seeded'");

@@ -6,7 +6,7 @@ import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { Colors, Fonts, Space, URGENCY } from '@/constants/theme';
 import { SystemPanel, SystemButton, sharedStyles } from '@/components/ui/System';
 import { Habit, HabitInput, ScheduleType } from '@/store/habitStore';
-import { formatHHMM, parseHHMM } from '@/lib/dates';
+import { formatHHMM, parseHHMM, EVERY_DAY, WEEK_ORDER, describeDays } from '@/lib/dates';
 
 interface Props {
   visible: boolean;
@@ -56,6 +56,7 @@ export function AddHabitModal({ visible, initial, onSave, onClose }: Props) {
   const [windowEnd, setWindowEnd] = useState('');
   const [hasGoal, setHasGoal] = useState(false);
   const [totalDays, setTotalDays] = useState('');
+  const [days, setDays] = useState(EVERY_DAY);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -69,11 +70,13 @@ export function AddHabitModal({ visible, initial, onSave, onClose }: Props) {
     setWindowEnd(initial?.windowEnd ?? '');
     setHasGoal(!!initial?.totalDays);
     setTotalDays(initial?.totalDays ? String(initial.totalDays) : '');
+    setDays(initial?.activeDays ?? EVERY_DAY);
     setError(null);
   }, [visible]);
 
   const save = () => {
     if (!name.trim()) return setError('Give the quest a name.');
+    if (!days) return setError('Pick at least one day.');
     if ((type === 'fixed' || type === 'window') && !time) return setError(type === 'window' ? 'Set when the window opens.' : 'Set a time.');
     if (type === 'window') {
       if (!windowEnd) return setError('Set when the window closes.');
@@ -89,6 +92,7 @@ export function AddHabitModal({ visible, initial, onSave, onClose }: Props) {
       windowEnd: type === 'window' ? windowEnd : null,
       totalDays: hasGoal ? Number(totalDays) || null : null,
       isDaily: !hasGoal,
+      activeDays: days,
     });
     onClose();
   };
@@ -121,6 +125,29 @@ export function AddHabitModal({ visible, initial, onSave, onClose }: Props) {
               ))}
             </View>
             <Text style={styles.hint}>{TYPES.find((t) => t.key === type)!.hint}</Text>
+
+            <View style={styles.daysHead}>
+              <Text style={[sharedStyles.inputLabel, { flex: 1 }]}>ACTIVE ON · {describeDays(days)}</Text>
+              {[['ALL', EVERY_DAY], ['WEEKDAYS', 0b0111110], ['WEEKENDS', 0b1000001]].map(([label, m]) => (
+                <TouchableOpacity key={label as string} onPress={() => { setDays(m as number); setError(null); }}>
+                  <Text style={[styles.preset, days === m && { color: Colors.system }]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.dots}>
+              {WEEK_ORDER.map(([d, label]) => {
+                const on = (days & (1 << d)) !== 0;
+                return (
+                  <TouchableOpacity
+                    key={d}
+                    onPress={() => { setDays(days ^ (1 << d)); setError(null); }}
+                    style={[styles.dot, on && styles.dotOn]}
+                  >
+                    <Text style={[styles.dotText, on && { color: Colors.background }]}>{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
             {type !== 'anytime' && (
               <View style={styles.row}>
@@ -200,6 +227,15 @@ const styles = StyleSheet.create({
   segText: { fontFamily: Fonts.displaySemi, fontSize: 9, letterSpacing: 0.5, color: Colors.textSecondary, textAlign: 'center' },
   hint: { fontFamily: Fonts.body, fontSize: 12, color: Colors.textMuted, marginTop: 6 },
   timeBtn: { justifyContent: 'center' },
+  daysHead: { flexDirection: 'row', alignItems: 'flex-end', gap: Space.md },
+  preset: { fontFamily: Fonts.displaySemi, fontSize: 9, letterSpacing: 1, color: Colors.textMuted, marginBottom: Space.xs },
+  dots: { flexDirection: 'row', justifyContent: 'space-between' },
+  dot: {
+    width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.surfaceHigh, alignItems: 'center', justifyContent: 'center',
+  },
+  dotOn: { backgroundColor: Colors.system, borderColor: Colors.system },
+  dotText: { fontFamily: Fonts.display, fontSize: 13, color: Colors.textSecondary },
   timeText: { fontFamily: Fonts.display, fontSize: 18, color: Colors.system, letterSpacing: 2 },
   error: { fontFamily: Fonts.bodyMedium, fontSize: 13, color: Colors.danger, marginTop: Space.md },
 });

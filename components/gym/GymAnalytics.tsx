@@ -5,8 +5,10 @@ import { Colors, Fonts, Space, glow } from '@/constants/theme';
 import { SystemPanel, SectionLabel, Stat, Body, SystemButton } from '@/components/ui/System';
 import { useGymStore } from '@/store/gymStore';
 import { todayKey, describeKey } from '@/lib/dates';
-import { exerciseStats, recentExerciseOrder, weeklyVolume, workoutDays } from '@/lib/gymAnalytics';
+import { exerciseStats, recentExerciseOrder, weeklyVolume, workoutDaysThisMonth, workoutDaysThisWeek } from '@/lib/gymAnalytics';
 
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const shortDate = (key: string) => `${Number(key.slice(8))} ${MONTHS[Number(key.slice(5, 7)) - 1]}`;
 const kg = (n: number) => (n >= 10000 ? `${(n / 1000).toFixed(1)}T` : `${Math.round(n)}`);
 
 /** Status tab section: training frequency, volume trend, and per-exercise progress. */
@@ -28,9 +30,9 @@ export function GymAnalytics({ onOpenLog }: { onOpenLog: () => void }) {
       <SectionLabel>GYM ANALYTICS</SectionLabel>
       <SystemPanel tone="ember">
         <View style={styles.stats}>
-          <Stat label="THIS WEEK" value={workoutDays(sets, today, 7)} color={Colors.ember} />
-          <Stat label="30 DAYS" value={workoutDays(sets, today, 30)} color={Colors.ember} />
-          <Stat label="KG / WEEK" value={kg(weekly[weekly.length - 1]?.volume ?? 0)} color={Colors.gold} />
+          <Stat label="THIS WEEK" value={workoutDaysThisWeek(sets, today)} color={Colors.ember} />
+          <Stat label="THIS MONTH" value={workoutDaysThisMonth(sets, today)} color={Colors.ember} />
+          <Stat label="KG THIS WEEK" value={kg(weekly[weekly.length - 1]?.volume ?? 0)} color={Colors.gold} />
           <Stat label="EXERCISES" value={order.length} color={Colors.system} />
         </View>
         <SystemButton label="OPEN GYM LOG" tone="ember" variant="outline" small onPress={onOpenLog} style={{ marginTop: Space.md }} />
@@ -38,7 +40,7 @@ export function GymAnalytics({ onOpenLog }: { onOpenLog: () => void }) {
 
       {sets.length > 0 && (
         <>
-          <SystemPanel title="WEEKLY VOLUME (KG)">
+          <SystemPanel title="WEEKLY VOLUME (KG) · MON–SUN">
             <View style={styles.chart}>
               {weekly.map((w, i) => (
                 <View key={w.start} style={styles.barCol}>
@@ -50,9 +52,13 @@ export function GymAnalytics({ onOpenLog }: { onOpenLog: () => void }) {
                 </View>
               ))}
             </View>
-            <View style={styles.axis}>
-              <Text style={styles.axisText}>8 WEEKS AGO</Text>
-              <Text style={styles.axisText}>THIS WEEK</Text>
+            {/* Week labels: the Monday each week starts on */}
+            <View style={styles.weekLabels}>
+              {weekly.map((w, i) => (
+                <Text key={w.start} style={[styles.weekLabel, i === weekly.length - 1 && { color: Colors.ember }]}>
+                  {i === weekly.length - 1 ? 'NOW' : shortDate(w.start)}
+                </Text>
+              ))}
             </View>
           </SystemPanel>
 
@@ -107,6 +113,8 @@ const styles = StyleSheet.create({
   barCol: { flex: 1, height: '100%', justifyContent: 'flex-end', alignItems: 'center' },
   bar: { width: '100%', backgroundColor: Colors.ember, borderRadius: 1 },
   barVal: { fontFamily: Fonts.displaySemi, fontSize: 8, color: Colors.textMuted, marginBottom: 2 },
+  weekLabels: { flexDirection: 'row', gap: 4, marginTop: 6 },
+  weekLabel: { flex: 1, textAlign: 'center', fontFamily: Fonts.displaySemi, fontSize: 8, color: Colors.textMuted },
   axis: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
   axisText: { fontFamily: Fonts.displaySemi, fontSize: 9, letterSpacing: 1, color: Colors.textMuted },
   chip: { borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surfaceHigh, borderRadius: 3, paddingHorizontal: 10, paddingVertical: 6 },

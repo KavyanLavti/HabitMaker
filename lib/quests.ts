@@ -1,4 +1,4 @@
-import { useHabitStore, Habit } from '@/store/habitStore';
+import { useHabitStore, Habit, isHabitActive } from '@/store/habitStore';
 import { usePointStore } from '@/store/pointStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { calculateEarnedPoints, getConsecutivePerfectDays, isPerfectDay } from '@/lib/pointEngine';
@@ -40,13 +40,15 @@ export async function completeQuest(
     : 1;
   const result = calculateEarnedPoints(Math.ceil(habit.pointsPerCompletion * fraction), streakBefore + 1, settings);
 
-  const activeIds = hs.habits.map((h) => h.id);
+  // Only quests scheduled today count toward a perfect day
+  const idsFor = (day: string) => hs.habits.filter((h) => isHabitActive(h, day)).map((h) => h.id);
+  const activeIds = idsFor(today);
   const byDate: Record<string, string[]> = {};
   for (const c of hs.completions) (byDate[c.date] ??= []).push(c.habitId);
   const doneTodayBefore = byDate[today] ?? [];
   const wasPerfect = isPerfectDay(activeIds, doneTodayBefore);
   const days = Array.from({ length: 30 }, (_, i) => addDaysKey(today, -i));
-  const perfectRunBefore = getConsecutivePerfectDays(activeIds, byDate, days);
+  const perfectRunBefore = getConsecutivePerfectDays(idsFor, byDate, days);
 
   await hs.addCompletion({
     habitId: habit.id,
@@ -111,7 +113,9 @@ export async function completeQuest(
 }
 
 /** Avoid-habit check-in answered "I slipped": no credit today; the reminder is cleared. */
-export function logSlip(habit: Habit) {
+export async function logSlip(habit: Habit) {
   SystemGuard.markHandled(habit.id);
+  // Recorded so the day stays a slip: the check-in can't be flipped to "clean" afterwards
+  await useHabitStore.getState().addSlip(habit.id, todayKey());
   playFx({ kind: 'slip', name: habit.name, freezes: useHabitStore.getState().getStreakState(habit.id).freezes });
 }

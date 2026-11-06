@@ -2,7 +2,7 @@ import { runQuery, getDb } from './db';
 import { dateKeyOf } from './dates';
 
 export interface AppBackup {
-  version: 2 | 3 | 4;
+  version: 2 | 3 | 4 | 5;
   exportedAt: string;
   habits: any[];
   completions: any[];
@@ -16,11 +16,14 @@ export interface AppBackup {
   overrides?: any[];
   exercises?: any[];
   workoutSets?: any[];
+  /** v5+ */
+  slips?: any[];
+  todos?: any[];
   settings?: any; // Zustand-persisted settings blob passed in by the caller
 }
 
 export async function buildBackup(settingsBlob?: any): Promise<AppBackup> {
-  const [habits, completions, ledger, rewards, meta, grants, overrides, exercises, sets] = await Promise.all([
+  const [habits, completions, ledger, rewards, meta, grants, overrides, exercises, sets, slips, todos] = await Promise.all([
     runQuery('SELECT * FROM habits ORDER BY createdAt ASC'),
     runQuery('SELECT * FROM habit_completions ORDER BY completedAt ASC'),
     runQuery('SELECT * FROM point_ledger ORDER BY createdAt ASC'),
@@ -30,9 +33,11 @@ export async function buildBackup(settingsBlob?: any): Promise<AppBackup> {
     runQuery('SELECT * FROM habit_overrides ORDER BY date ASC'),
     runQuery('SELECT * FROM exercises ORDER BY createdAt ASC'),
     runQuery('SELECT * FROM workout_sets ORDER BY date ASC, setIndex ASC'),
+    runQuery('SELECT * FROM habit_slips ORDER BY date ASC'),
+    runQuery('SELECT * FROM todos ORDER BY date ASC, createdAt ASC'),
   ]);
   return {
-    version: 4,
+    version: 5,
     exportedAt: new Date().toISOString(),
     habits,
     completions,
@@ -43,6 +48,8 @@ export async function buildBackup(settingsBlob?: any): Promise<AppBackup> {
     overrides,
     exercises,
     workoutSets: sets,
+    slips,
+    todos,
     settings: settingsBlob,
   };
 }
@@ -68,18 +75,21 @@ export async function restoreFromBackup(jsonString: string): Promise<AppBackup> 
       DELETE FROM habit_overrides;
       DELETE FROM workout_sets;
       DELETE FROM exercises;
+      DELETE FROM habit_slips;
+      DELETE FROM todos;
     `);
 
     for (const h of backup.habits) {
       await db.runAsync(
         `INSERT OR IGNORE INTO habits
            (id,name,urgencyLevel,pointsPerCompletion,dailyDurationMinutes,
-            scheduledTime,totalDays,isDaily,createdAt,archivedAt,scheduleType,windowEnd,deletedAt)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            scheduledTime,totalDays,isDaily,createdAt,archivedAt,scheduleType,windowEnd,deletedAt,activeDays)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [h.id, h.name, h.urgencyLevel, h.pointsPerCompletion,
          h.dailyDurationMinutes, h.scheduledTime ?? null, h.totalDays ?? null,
          h.isDaily ? 1 : 0, h.createdAt, h.archivedAt ?? null,
-         h.scheduleType ?? (h.scheduledTime ? 'fixed' : 'anytime'), h.windowEnd ?? null, h.deletedAt ?? null]
+         h.scheduleType ?? (h.scheduledTime ? 'fixed' : 'anytime'), h.windowEnd ?? null, h.deletedAt ?? null,
+         h.activeDays ?? 127]
       );
     }
 
@@ -125,6 +135,16 @@ export async function restoreFromBackup(jsonString: string): Promise<AppBackup> 
       await db.runAsync(
         'INSERT OR IGNORE INTO workout_sets (id,date,exerciseId,setIndex,reps,weightKg,createdAt) VALUES (?,?,?,?,?,?,?)',
         [w.id, w.date, w.exerciseId, w.setIndex, w.reps, w.weightKg, w.createdAt]
+      );
+    }
+
+    for (const s of backup.slips ?? []) {
+      await db.runAsync('INSERT OR IGNORE INTO habit_slips (habitId,date,createdAt) VALUES (?,?,?)', [s.habitId, s.date, s.createdAt]);
+    }
+    for (const t of backup.todos ?? []) {
+      await db.runAsync(
+        'INSERT OR IGNORE INTO todos (id,date,title,points,done,doneAt,ledgerId,createdAt) VALUES (?,?,?,?,?,?,?,?)',
+        [t.id, t.date, t.title, t.points, t.done ? 1 : 0, t.doneAt ?? null, t.ledgerId ?? null, t.createdAt]
       );
     }
 

@@ -10,12 +10,12 @@ import { DayTimeline } from '@/components/schedule/DayTimeline';
 import { useHabitStore, Habit } from '@/store/habitStore';
 import { useScheduleStore, conflictKey } from '@/store/scheduleStore';
 import { SYNC_DAYS } from '@/lib/calendarSync';
-import { addDaysKey, describeKey, todayKey } from '@/lib/dates';
+import { addDaysKey, describeKey, todayKey, isActiveOn } from '@/lib/dates';
 import { clashesWith, fmt, hhmm, plannedSlot, suggestSlots, SchedHabit } from '@/lib/scheduling';
 
 const toSched = (h: Habit): SchedHabit => ({
   id: h.id, name: h.name, scheduleType: h.scheduleType, scheduledTime: h.scheduledTime,
-  windowEnd: h.windowEnd, dailyDurationMinutes: h.dailyDurationMinutes,
+  windowEnd: h.windowEnd, dailyDurationMinutes: h.dailyDurationMinutes, activeDays: h.activeDays,
 });
 
 /** Move one day of a habit, with your calendar and smart suggestions in view. */
@@ -114,9 +114,10 @@ export default function ScheduleScreen() {
             const info = describeKey(d);
             const on = d === date;
             const bad = conflictDates.has(d);
+            const rest = habit ? !isActiveOn(habit.activeDays, d) : false;
             return (
-              <TouchableOpacity key={d} onPress={() => setDate(d)}
-                style={[styles.day, on && { borderColor: Colors.system, ...glow(Colors.system) }, bad && !on && { borderColor: Colors.danger }]}>
+              <TouchableOpacity key={d} onPress={() => setDate(d)} disabled={rest}
+                style={[styles.day, on && { borderColor: Colors.system, ...glow(Colors.system) }, bad && !on && { borderColor: Colors.danger }, rest && { opacity: 0.3 }]}>
                 <Text style={[styles.dayName, bad && { color: Colors.danger }]}>{info.day.slice(0, 3)}</Text>
                 <Text style={[styles.dayNum, on && { color: Colors.system }]}>{Number(d.slice(8))}</Text>
                 {habit && overrides[habit.id]?.[d] != null && <View style={styles.movedDot} />}

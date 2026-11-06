@@ -69,3 +69,35 @@ export function describeKey(key: string): { day: string; date: string } {
   const dt = new Date(y, m - 1, d);
   return { day: DAYS[dt.getDay()], date: `${d} ${MONTHS[m - 1]} ${y}` };
 }
+
+/** 0 = Sunday … 6 = Saturday, for a "YYYY-MM-DD" key. */
+export function weekdayOf(key: string): number {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d).getDay();
+}
+
+/** Monday of the calendar week containing `key` (weeks run Monday → Sunday). */
+export function weekStartKey(key: string): string {
+  return addDaysKey(key, -((weekdayOf(key) + 6) % 7));
+}
+
+// ── Active weekdays ─────────────────────────────────────────────────────────
+// Stored as a bitmask: bit 0 = Sunday … bit 6 = Saturday. 127 = every day.
+export const EVERY_DAY = 127;
+/** Picker order: Monday first. Each entry is [JS weekday, label]. */
+export const WEEK_ORDER: [number, string][] = [[1, 'M'], [2, 'T'], [3, 'W'], [4, 'T'], [5, 'F'], [6, 'S'], [0, 'S']];
+const SHORT = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+export function isActiveOn(mask: number | null | undefined, key: string): boolean {
+  const m = mask == null ? EVERY_DAY : mask;
+  return (m & (1 << weekdayOf(key))) !== 0;
+}
+
+/** "EVERY DAY", "WEEKDAYS", "WEEKENDS" or "MON · WED · FRI". */
+export function describeDays(mask: number | null | undefined): string {
+  const m = mask == null ? EVERY_DAY : mask;
+  if ((m & EVERY_DAY) === EVERY_DAY) return 'EVERY DAY';
+  if (m === 0b0111110) return 'WEEKDAYS';
+  if (m === 0b1000001) return 'WEEKENDS';
+  return WEEK_ORDER.filter(([d]) => m & (1 << d)).map(([d]) => SHORT[d]).join(' · ');
+}

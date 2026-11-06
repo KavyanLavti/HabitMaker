@@ -23,7 +23,13 @@ export interface StreakState {
  * Derived purely from completion dates, so it can't drift out of sync with the history and
  * survives backup/restore without extra state.
  */
-export function computeStreak(startKey: string, completedKeys: Iterable<string>, today: string): StreakState {
+export function computeStreak(
+  startKey: string,
+  completedKeys: Iterable<string>,
+  today: string,
+  /** Rest days (habit not scheduled that weekday) are skipped: neither a miss nor a streak day. */
+  isActive: (day: string) => boolean = () => true
+): StreakState {
   const done = new Set(completedKeys);
   const state: StreakState = { streak: 0, freezes: 0, towardNextFreeze: 0, frozenDays: [] };
 
@@ -41,8 +47,8 @@ export function computeStreak(startKey: string, completedKeys: Iterable<string>,
         state.towardNextFreeze = 0;
         if (state.freezes < MAX_FREEZES) state.freezes++;
       }
-    } else if (day === today) {
-      // In progress — not a miss yet.
+    } else if (day === today || !isActive(day)) {
+      // Today is still in progress; rest days don't count either way.
     } else if (state.freezes > 0) {
       state.freezes--;
       state.frozenDays.push(day);

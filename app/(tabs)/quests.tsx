@@ -6,7 +6,7 @@ import { Colors, Fonts, Space, URGENCY, glow } from '@/constants/theme';
 import { SystemPanel, ScreenHeader, SectionLabel, Body, SystemButton, sharedStyles } from '@/components/ui/System';
 import { AddHabitModal } from '@/components/habits/AddHabitModal';
 import { useHabitStore, Habit, HabitInput, TRASH_DAYS } from '@/store/habitStore';
-import { dateKeyOf, daysBetweenKeys, todayKey } from '@/lib/dates';
+import { dateKeyOf, daysBetweenKeys, todayKey, describeDays } from '@/lib/dates';
 
 function scheduleLabel(h: Habit) {
   if (h.scheduleType === 'window') return `${h.scheduledTime}–${h.windowEnd}`;
@@ -68,6 +68,7 @@ export default function QuestsTab() {
                   <Text style={styles.meta}>
                     {scheduleLabel(h)}{h.scheduleType === 'avoid' ? '' : ` · ${h.dailyDurationMinutes}M`} · +{h.pointsPerCompletion} PTS
                     {h.totalDays ? ` · ${h.totalDays}D GOAL` : ''}
+                    {h.activeDays !== 127 ? ` · ${describeDays(h.activeDays)}` : ''}
                   </Text>
                   <Text style={styles.meta}>🔥 {s.streak}   ❄ {s.freezes}</Text>
                 </View>

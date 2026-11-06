@@ -46,3 +46,11 @@ const rs = suggestSlots(read, [{ start: 18 * 60, end: 22 * 60, title: 'Exam' }],
 assert.ok(rs.length > 0);
 
 console.log('scheduling: all passed');
+
+// Rest days never conflict: gym Mon/Wed/Fri, class on Thursday 2026-10-22
+{
+  const mwf = (1 << 1) | (1 << 3) | (1 << 5);
+  assert.equal(findConflicts([{ ...gym, activeDays: mwf }], ['2026-10-22'], { '2026-10-22': [cls] }, {}).length, 0);
+  assert.equal(findConflicts([{ ...gym, activeDays: mwf }], ['2026-10-21'], { '2026-10-21': [cls] }, {}).length, 1);
+  console.log('scheduling (rest days): passed');
+}

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { runQuery, runMutation, activeDbName, REAL_DB } from '@/lib/db';
-import { addDaysKey, todayKey } from '@/lib/dates';
+import { addDaysKey, todayKey, isActiveOn } from '@/lib/dates';
 import { Busy, Conflict, SchedHabit, Slot, findConflicts, plannedSlot } from '@/lib/scheduling';
 import {
   CalendarInfo, SYNC_DAYS, fetchBusy, hasCalendarPermission, isNoiseCalendar, listCalendars,
@@ -48,7 +48,7 @@ export const conflictKey = (c: { habitId: string; date: string }) => `${c.habitI
 function schedHabits(): SchedHabit[] {
   return useHabitStore.getState().habits.map((h) => ({
     id: h.id, name: h.name, scheduleType: h.scheduleType, scheduledTime: h.scheduledTime,
-    windowEnd: h.windowEnd, dailyDurationMinutes: h.dailyDurationMinutes,
+    windowEnd: h.windowEnd, dailyDurationMinutes: h.dailyDurationMinutes, activeDays: h.activeDays,
   }));
 }
 
@@ -139,7 +139,9 @@ export const useScheduleStore = create<ScheduleState>()(
             const slots: Record<string, Record<string, Slot | null>> = {};
             for (const h of habits) {
               slots[h.id] = {};
-              for (const d of dates) slots[h.id][d] = plannedSlot(h, busyByDate[d] ?? [], overrides[h.id]?.[d]);
+              for (const d of dates) {
+                slots[h.id][d] = isActiveOn(h.activeDays, d) ? plannedSlot(h, busyByDate[d] ?? [], overrides[h.id]?.[d]) : null;
+              }
             }
             await writeHabitEvents(habitCalendarId, habits, slots);
           }

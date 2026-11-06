@@ -7,7 +7,7 @@
     "android": "expo start --android",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "tsx lib/__tests__/streaks.test.ts && tsx lib/__tests__/gate.test.ts && tsx lib/__tests__/dates.test.ts && tsx lib/__tests__/gym.test.ts && tsx lib/__tests__/scheduling.test.ts",
+    "test": "tsx lib/__tests__/streaks.test.ts && tsx lib/__tests__/gate.test.ts && tsx lib/__tests__/dates.test.ts && tsx lib/__tests__/gym.test.ts && tsx lib/__tests__/scheduling.test.ts && tsx lib/__tests__/todo.test.ts",
     "build:apk": "eas build --platform android --profile preview"
   },
   "dependencies": {

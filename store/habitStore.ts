@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { runQuery, runMutation, newId } from '@/lib/db';
-import { dateKeyOf, todayKey, daysBetweenKeys } from '@/lib/dates';
+import { dateKeyOf, todayKey, daysBetweenKeys, isActiveOn, EVERY_DAY } from '@/lib/dates';
 import { computeStreak, StreakState } from '@/lib/streaks';
 import { nowIso } from '@/lib/clock';
 
@@ -23,6 +23,8 @@ export interface Habit {
   windowEnd: string | null;
   totalDays: number | null;
   isDaily: boolean;
+  /** Weekdays the habit runs on: bitmask, bit 0 = Sunday … bit 6 = Saturday. 127 = every day. */
+  activeDays: number;
   createdAt: string;
   archivedAt: string | null;
   deletedAt: string | null;
@@ -47,6 +49,8 @@ interface HabitStore {
   habits: Habit[];
   trash: Habit[];
   completions: HabitCompletion[];
+  /** Avoid habits answered "I slipped": "habitId|YYYY-MM-DD" */
+  slips: Set<string>;
   loaded: boolean;
   loadAll: () => Promise<void>;
   addHabit: (h: HabitInput) => Promise<Habit>;
@@ -60,7 +64,12 @@ interface HabitStore {
   isCompletedToday: (habitId: string) => boolean;
   getStreakState: (habitId: string) => StreakState;
   getCompletionCount: (habitId: string) => number;
+  addSlip: (habitId: string, date: string) => Promise<void>;
+  hasSlipped: (habitId: string, date?: string) => boolean;
 }
+
+/** Whether a habit is scheduled on a given day (rest days are skipped everywhere). */
+export const isHabitActive = (h: Pick<Habit, 'activeDays'>, date: string) => isActiveOn(h.activeDays, date);
 
 function rowToHabit(r: any): Habit {
   return {
@@ -69,6 +78,7 @@ function rowToHabit(r: any): Habit {
     scheduleType: (r.scheduleType ?? (r.scheduledTime ? 'fixed' : 'anytime')) as ScheduleType,
     windowEnd: r.windowEnd ?? null,
     deletedAt: r.deletedAt ?? null,
+    activeDays: r.activeDays == null ? EVERY_DAY : Number(r.activeDays),
   };
 }
 
@@ -82,6 +92,7 @@ export const useHabitStore = create<HabitStore>((set, get) => ({
   habits: [],
   trash: [],
   completions: [],
+  slips: new Set(),
   loaded: false,
 
   loadAll: async () => {
@@ -97,10 +108,14 @@ export const useHabitStore = create<HabitStore>((set, get) => ({
     const all = (await runQuery<any>('SELECT * FROM habits ORDER BY scheduledTime ASC')).map(rowToHabit);
     const completions = (await runQuery<any>('SELECT * FROM habit_completions ORDER BY completedAt DESC'))
       .map((c) => ({ ...c, timerUsed: Boolean(c.timerUsed), date: c.date ?? dateKeyOf(c.completedAt) }));
+    const slips = new Set(
+      (await runQuery<{ habitId: string; date: string }>('SELECT habitId, date FROM habit_slips')).map((r) => `${r.habitId}|${r.date}`)
+    );
     set({
       habits: all.filter((h) => !h.archivedAt && !h.deletedAt),
       trash: all.filter((h) => !!h.deletedAt),
       completions,
+      slips,
       loaded: true,
     });
   },
@@ -109,12 +124,12 @@ export const useHabitStore = create<HabitStore>((set, get) => ({
     const habit: Habit = { ...data, id: newId(), createdAt: nowIso(), archivedAt: null, deletedAt: null };
     await runMutation(
       `INSERT INTO habits (id,name,urgencyLevel,pointsPerCompletion,dailyDurationMinutes,
-       scheduledTime,totalDays,isDaily,createdAt,archivedAt,scheduleType,windowEnd,deletedAt)
-       VALUES (?,?,?,?,?,?,?,?,?,NULL,?,?,NULL)`,
+       scheduledTime,totalDays,isDaily,createdAt,archivedAt,scheduleType,windowEnd,deletedAt,activeDays)
+       VALUES (?,?,?,?,?,?,?,?,?,NULL,?,?,NULL,?)`,
       [
         habit.id, habit.name, habit.urgencyLevel, habit.pointsPerCompletion,
         habit.dailyDurationMinutes, habit.scheduledTime, habit.totalDays,
-        habit.isDaily ? 1 : 0, habit.createdAt, habit.scheduleType, habit.windowEnd,
+        habit.isDaily ? 1 : 0, habit.createdAt, habit.scheduleType, habit.windowEnd, habit.activeDays ?? EVERY_DAY,
       ]
     );
     set((s) => ({ habits: [...s.habits, habit] }));
@@ -190,6 +205,14 @@ export const useHabitStore = create<HabitStore>((set, get) => ({
     const habit = get().habits.find((h) => h.id === habitId) ?? get().trash.find((h) => h.id === habitId);
     const keys = get().completions.filter((c) => c.habitId === habitId).map((c) => c.date);
     const start = habit ? dateKeyOf(habit.createdAt) : todayKey();
-    return computeStreak(start, keys, todayKey());
+    const mask = habit?.activeDays ?? EVERY_DAY;
+    return computeStreak(start, keys, todayKey(), (d) => isActiveOn(mask, d));
   },
+
+  addSlip: async (habitId, date) => {
+    await runMutation('INSERT OR IGNORE INTO habit_slips (habitId,date,createdAt) VALUES (?,?,?)', [habitId, date, nowIso()]);
+    set((s) => ({ slips: new Set([...s.slips, `${habitId}|${date}`]) }));
+  },
+
+  hasSlipped: (habitId, date = todayKey()) => get().slips.has(`${habitId}|${date}`),
 }));

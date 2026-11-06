@@ -1,5 +1,6 @@
 // Pure scheduling rules: where each habit sits on a given day, what it clashes with, and smart
 // alternative times. Times are minutes after local midnight. No React/storage imports (unit tested).
+import { isActiveOn } from './dates';
 
 export interface Busy {
   start: number;
@@ -19,6 +20,8 @@ export interface SchedHabit {
   scheduledTime: string | null;
   windowEnd: string | null;
   dailyDurationMinutes: number;
+  /** Weekday bitmask (bit 0 = Sunday); missing = every day. */
+  activeDays?: number;
 }
 
 export interface Conflict {
@@ -95,6 +98,7 @@ export function findConflicts(
     const busy = busyByDate[date] ?? [];
     if (!busy.length) continue;
     for (const h of habits) {
+      if (!isActiveOn(h.activeDays, date)) continue; // rest day
       const slot = plannedSlot(h, busy, overrides[h.id]?.[date]);
       if (!slot) continue;
       const clashes = clashesWith(slot, busy);
