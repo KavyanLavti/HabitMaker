@@ -12,6 +12,7 @@ import { useSettingsStore, Settings } from '@/store/settingsStore';
 import { reloadAll } from '@/lib/reload';
 import { TestModePanel } from '@/components/TestModePanel';
 import { CalendarPanel } from '@/components/CalendarPanel';
+import { FoodAiPanel } from '@/components/nutrition/FoodAiPanel';
 import { buildBackupJson, restoreFromBackup } from '@/lib/dataExport';
 import {
   backupNow, fetchLatestBackup, getBackupStatus, getBackupToken, setBackupToken, BackupStatus, BACKUP_HOUR,
@@ -187,6 +188,8 @@ export default function SettingsScreen() {
         </SystemPanel>
 
         <CalendarPanel />
+
+        <FoodAiPanel />
 
         <SystemPanel title="QUEST ALERTS">
           {(!perm.notif || !perm.exact) && (

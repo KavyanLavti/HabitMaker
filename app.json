@@ -2,7 +2,7 @@
   "expo": {
     "name": "HabitForge",
     "slug": "HabitForge",
-    "version": "2.2.0",
+    "version": "3.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "habitforge",
@@ -33,7 +33,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "HabitForge uses your photos for reward icons."
+          "photosPermission": "HabitForge uses your photos for reward icons and meal photos.",
+          "cameraPermission": "HabitForge uses the camera to photograph your meals for calorie tracking."
         }
       ],
       [

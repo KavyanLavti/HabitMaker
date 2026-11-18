@@ -7,6 +7,7 @@ import { Colors, Fonts, Space, rankFor, glow } from '@/constants/theme';
 import { SystemPanel, ScreenHeader, SectionLabel, Bar, Stat, Body, sharedStyles } from '@/components/ui/System';
 import { RankEmblem } from '@/components/aura/RankEmblem';
 import { GymAnalytics } from '@/components/gym/GymAnalytics';
+import { NutritionAnalytics } from '@/components/nutrition/NutritionAnalytics';
 import { TodoAnalytics } from '@/components/todo/TodoAnalytics';
 import { useHabitStore } from '@/store/habitStore';
 import { usePointStore } from '@/store/pointStore';
@@ -85,6 +86,17 @@ export default function StatusTab() {
               <Text style={styles.gymSub}>Log exercises, sets, reps and weight</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={Colors.ember} />
+          </SystemPanel>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => router.push('/nutrition')} activeOpacity={0.85}>
+          <SystemPanel tone="success" style={styles.gymLink}>
+            <Ionicons name="nutrition" size={22} color={Colors.success} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.gymTitle}>CALORIE MANAGEMENT</Text>
+              <Text style={styles.gymSub}>Snap your plate · calories, macros, vitamins</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={Colors.success} />
           </SystemPanel>
         </TouchableOpacity>
 
@@ -171,6 +183,7 @@ export default function StatusTab() {
         )}
         <TodoAnalytics />
         <GymAnalytics onOpenLog={() => router.push('/gym')} />
+        <NutritionAnalytics onOpen={() => router.push('/nutrition')} />
       </ScrollView>
     </SafeAreaView>
   );

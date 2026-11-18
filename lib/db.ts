@@ -189,6 +189,25 @@ async function initSchema(db: SQLite.SQLiteDatabase) {
       createdAt TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_todos_date ON todos(date);
+
+    -- v3.1 calorie management: one row per food eaten, nutrition for the portion eaten. micros is JSON.
+    CREATE TABLE IF NOT EXISTS food_items (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      meal TEXT NOT NULL,
+      name TEXT NOT NULL,
+      quantity TEXT NOT NULL,
+      grams REAL NOT NULL DEFAULT 0,
+      calories REAL NOT NULL DEFAULT 0,
+      protein REAL NOT NULL DEFAULT 0,
+      carbs REAL NOT NULL DEFAULT 0,
+      fat REAL NOT NULL DEFAULT 0,
+      fiber REAL NOT NULL DEFAULT 0,
+      micros TEXT NOT NULL DEFAULT '{}',
+      source TEXT NOT NULL,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_food_date ON food_items(date);
   `);
   // v2.3: weekdays a habit is active on, as a bitmask (bit 0 = Sunday … bit 6 = Saturday); 127 = every day
   try { await db.execAsync('ALTER TABLE habits ADD COLUMN activeDays INTEGER NOT NULL DEFAULT 127'); } catch {}

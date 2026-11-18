@@ -2,7 +2,7 @@ import { runQuery, getDb } from './db';
 import { dateKeyOf } from './dates';
 
 export interface AppBackup {
-  version: 2 | 3 | 4 | 5;
+  version: 2 | 3 | 4 | 5 | 6;
   exportedAt: string;
   habits: any[];
   completions: any[];
@@ -19,11 +19,13 @@ export interface AppBackup {
   /** v5+ */
   slips?: any[];
   todos?: any[];
+  /** v6+: calorie log */
+  foodItems?: any[];
   settings?: any; // Zustand-persisted settings blob passed in by the caller
 }
 
 export async function buildBackup(settingsBlob?: any): Promise<AppBackup> {
-  const [habits, completions, ledger, rewards, meta, grants, overrides, exercises, sets, slips, todos] = await Promise.all([
+  const [habits, completions, ledger, rewards, meta, grants, overrides, exercises, sets, slips, todos, foodItems] = await Promise.all([
     runQuery('SELECT * FROM habits ORDER BY createdAt ASC'),
     runQuery('SELECT * FROM habit_completions ORDER BY completedAt ASC'),
     runQuery('SELECT * FROM point_ledger ORDER BY createdAt ASC'),
@@ -35,9 +37,10 @@ export async function buildBackup(settingsBlob?: any): Promise<AppBackup> {
     runQuery('SELECT * FROM workout_sets ORDER BY date ASC, setIndex ASC'),
     runQuery('SELECT * FROM habit_slips ORDER BY date ASC'),
     runQuery('SELECT * FROM todos ORDER BY date ASC, createdAt ASC'),
+    runQuery('SELECT * FROM food_items ORDER BY date ASC, createdAt ASC'),
   ]);
   return {
-    version: 5,
+    version: 6,
     exportedAt: new Date().toISOString(),
     habits,
     completions,
@@ -50,6 +53,7 @@ export async function buildBackup(settingsBlob?: any): Promise<AppBackup> {
     workoutSets: sets,
     slips,
     todos,
+    foodItems,
     settings: settingsBlob,
   };
 }
@@ -77,6 +81,7 @@ export async function restoreFromBackup(jsonString: string): Promise<AppBackup> 
       DELETE FROM exercises;
       DELETE FROM habit_slips;
       DELETE FROM todos;
+      DELETE FROM food_items;
     `);
 
     for (const h of backup.habits) {
@@ -145,6 +150,15 @@ export async function restoreFromBackup(jsonString: string): Promise<AppBackup> 
       await db.runAsync(
         'INSERT OR IGNORE INTO todos (id,date,title,points,done,doneAt,ledgerId,createdAt) VALUES (?,?,?,?,?,?,?,?)',
         [t.id, t.date, t.title, t.points, t.done ? 1 : 0, t.doneAt ?? null, t.ledgerId ?? null, t.createdAt]
+      );
+    }
+
+    for (const f of backup.foodItems ?? []) {
+      await db.runAsync(
+        `INSERT OR IGNORE INTO food_items (id,date,meal,name,quantity,grams,calories,protein,carbs,fat,fiber,micros,source,createdAt)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [f.id, f.date, f.meal, f.name, f.quantity, f.grams ?? 0, f.calories ?? 0, f.protein ?? 0, f.carbs ?? 0, f.fat ?? 0,
+         f.fiber ?? 0, typeof f.micros === 'string' ? f.micros : JSON.stringify(f.micros ?? {}), f.source ?? 'text', f.createdAt]
       );
     }
 

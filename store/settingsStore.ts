@@ -22,6 +22,15 @@ export interface Settings {
   // Nightly GitHub backup (the token itself lives in SecureStore)
   backupEnabled: boolean;
   backupRepo: string; // "owner/repo"
+  // Calorie management (API keys live in SecureStore)
+  foodAiProvider: 'gemini' | 'claude';
+  /** Empty = the provider's default model. */
+  foodAiModelGemini: string;
+  foodAiModelClaude: string;
+  calorieTarget: number;
+  proteinTarget: number;
+  carbsTarget: number;
+  fatTarget: number;
 }
 
 interface SettingsStore {
@@ -43,6 +52,13 @@ export const defaultSettings: Settings = {
   displayName: 'Player',
   backupEnabled: false,
   backupRepo: '',
+  foodAiProvider: 'gemini',
+  foodAiModelGemini: '',
+  foodAiModelClaude: '',
+  calorieTarget: 2200,
+  proteinTarget: 100,
+  carbsTarget: 275,
+  fatTarget: 70,
 };
 
 export const useSettingsStore = create<SettingsStore>()(

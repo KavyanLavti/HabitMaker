@@ -58,6 +58,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="gym" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="nutrition" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="schedule" options={{ animation: 'slide_from_bottom' }} />
       </Stack>
       <TestModeBanner />

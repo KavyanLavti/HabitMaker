@@ -4,6 +4,7 @@ import { useRewardStore } from '@/store/rewardStore';
 import { useGateStore } from '@/store/gateStore';
 import { useGymStore } from '@/store/gymStore';
 import { useTodoStore } from '@/store/todoStore';
+import { useNutritionStore } from '@/store/nutritionStore';
 import { useScheduleStore } from '@/store/scheduleStore';
 import { announceNewFreezes } from './freezeWatch';
 
@@ -19,6 +20,7 @@ export async function reloadAll() {
     useGateStore.getState().load(),
     useGymStore.getState().loadGym(),
     useTodoStore.getState().load(),
+    useNutritionStore.getState().load(),
   ]);
   await useScheduleStore.getState().refresh();
   await announceNewFreezes();
