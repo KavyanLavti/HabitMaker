@@ -3,7 +3,7 @@ import { runQuery, runMutation, getMeta, setMeta, newId } from '@/lib/db';
 import { todayKey, addDaysKey } from '@/lib/dates';
 import { nowIso } from '@/lib/clock';
 import {
-  GateRules, defaultGateRules, PACK_MINUTES, rollBank, splitRulesChange, unusedEarnedMinutes,
+  GateRules, defaultGateRules, PACK_MINUTES, rollBank, splitRulesChange, unusedMinutes,
 } from '@/lib/gate';
 import { SystemGuard } from '@/modules/system-guard';
 import { usePointStore } from '@/store/pointStore';
@@ -34,6 +34,7 @@ const K = {
   pendingFrom: 'gate_pending_from',
   bank: 'gate_bank',
   bankThrough: 'gate_bank_through', // last day already rolled into the bank
+  freeFix: 'gate_bank_free_fix', // one-off credit for free minutes the old rule skipped
 };
 
 async function grantsFor(date: string): Promise<Record<string, number>> {
@@ -86,15 +87,26 @@ export const useGateStore = create<GateStore>((set, get) => {
         await setMeta(K.pendingFrom, '');
       }
 
-      // Roll every finished day's unused earned minutes into the bank
+      // Roll every finished day's unused minutes (free + earned) into the bank
       let bank = Number(await getMeta(K.bank)) || 0;
       const yesterday = addDaysKey(today, -1);
       const stored = await getMeta(K.bankThrough);
+      const pkgs = rules.enabled ? rules.apps.map((a) => a.pkg) : [];
+      // Before 2.3.1 only earned minutes were banked. Yesterday was already rolled under that rule,
+      // so credit its unused free minutes once.
+      if (!(await getMeta(K.freeFix))) {
+        if (stored && stored >= yesterday) {
+          const usage = SystemGuard.getUsage(yesterday);
+          const freeLeft = pkgs.reduce((n, p) => n + Math.max(0, rules.baseMinutes - (usage[p] ?? 0) / 60000), 0);
+          bank = rollBank(bank, Math.floor(freeLeft));
+        }
+        await setMeta(K.freeFix, '1');
+      }
       let through = stored || yesterday; // first run: nothing to roll
       // The native tracker keeps 14 days, so never look back further than that
       if (through < addDaysKey(today, -14)) through = addDaysKey(today, -14);
       for (let d = addDaysKey(through, 1); d <= yesterday; d = addDaysKey(d, 1)) {
-        const unused = unusedEarnedMinutes(await grantsFor(d), SystemGuard.getUsage(d), rules.baseMinutes);
+        const unused = unusedMinutes(pkgs, await grantsFor(d), SystemGuard.getUsage(d), rules.baseMinutes);
         bank = rollBank(bank, unused);
       }
       await setMeta(K.bank, String(bank));

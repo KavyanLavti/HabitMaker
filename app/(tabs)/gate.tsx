@@ -214,8 +214,8 @@ GATE KNOWS ${diag.configApps.length} APP(S)${diag.configEnabled ? '' : ' · GATE
             Each extra {PACK_MINUTES} minutes costs {rules.pointsPerPack} points.
           </Body>
           <Body muted style={{ fontSize: 12, marginTop: Space.sm }}>
-            At midnight, earned minutes you didn't use go to the bank (max {BANK_CAP_MINUTES} min). Anything over that
-            expires. Free minutes never carry over.
+            At midnight, minutes you didn't use (free and earned, across all apps) go to the bank (max{' '}
+            {BANK_CAP_MINUTES} min). Anything over that expires.
           </Body>
           {pending && (
             <Body style={{ color: Colors.ember, fontSize: 12, marginTop: Space.sm }}>

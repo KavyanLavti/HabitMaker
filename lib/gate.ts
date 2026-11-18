@@ -25,24 +25,27 @@ export const defaultGateRules: GateRules = {
 };
 
 /**
- * Earned minutes (bought or drawn from the bank) that went unused on a day, summed over apps.
- * Usage eats the free base allowance first, then earned minutes.
+ * Minutes left over on a day, summed over the gated apps: each app's free allowance plus anything
+ * bought or drawn from the bank for it, minus what was actually used. An app never opened gives its
+ * whole allowance. Going over on one app never eats another app's leftovers.
  */
-export function unusedEarnedMinutes(
+export function unusedMinutes(
+  appPkgs: string[],
   grantedByPkg: Record<string, number>,
   usedMsByPkg: Record<string, number>,
   baseMinutes: number
 ): number {
+  const pkgs = new Set([...appPkgs, ...Object.keys(grantedByPkg)]);
   let total = 0;
-  for (const [pkg, granted] of Object.entries(grantedByPkg)) {
+  for (const pkg of pkgs) {
+    const allowance = (appPkgs.includes(pkg) ? baseMinutes : 0) + (grantedByPkg[pkg] ?? 0);
     const usedMin = (usedMsByPkg[pkg] ?? 0) / 60000;
-    const usedFromEarned = Math.max(0, usedMin - baseMinutes);
-    total += Math.max(0, granted - usedFromEarned);
+    total += Math.max(0, allowance - usedMin);
   }
   return Math.floor(total);
 }
 
-/** Unused earned minutes roll into the bank, which holds at most BANK_CAP_MINUTES. The rest expire. */
+/** Unused minutes (free + earned) roll into the bank, which holds at most BANK_CAP_MINUTES. The rest expire. */
 export function rollBank(bank: number, unused: number): number {
   return Math.min(BANK_CAP_MINUTES, bank + Math.max(0, unused));
 }
